@@ -4,9 +4,10 @@
 controlled fault injection, asserted against a declared expectation — pass or
 fail.** For authorized lab and staging targets only.
 
-> **Status: pre-code.** This repository currently holds the design — requirements,
-> threat model, architecture, and decision records. No implementation exists yet.
-> See [`docs/`](docs/) and the [roadmap](#roadmap).
+> **Status: v1 (Case 1) works.** The sustained scenario runs end to end —
+> `run` → `assert` → `report` — with BlastGuard enforcing the safety invariants.
+> Ramp-up, spike, chaos injection and soak are on the [roadmap](#roadmap) below.
+> See [`docs/`](docs/) for the design.
 
 Sapper is the offensive complement to **Warden**, the black-box API security
 scanner ([repo: `security-scanner`](https://github.com/JonasBorgesLM/security-scanner)).
