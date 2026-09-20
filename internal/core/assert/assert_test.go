@@ -9,7 +9,7 @@ import (
 )
 
 func dur(d time.Duration) *scenario.Duration { sd := scenario.Duration(d); return &sd }
-func rate(f float64) *float64                 { return &f }
+func rate(f float64) *float64                { return &f }
 
 func aggWith(p99 time.Duration, errRate float64) metrics.Aggregation {
 	return metrics.Aggregation{

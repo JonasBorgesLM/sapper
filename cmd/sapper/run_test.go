@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/JonasBorgesLM/sapper/internal/adapters/config"
-	"github.com/JonasBorgesLM/sapper/internal/core/scenario"
 	"github.com/JonasBorgesLM/sapper/internal/core/model"
+	"github.com/JonasBorgesLM/sapper/internal/core/scenario"
 )
 
 func dur(d time.Duration) *scenario.Duration { sd := scenario.Duration(d); return &sd }
