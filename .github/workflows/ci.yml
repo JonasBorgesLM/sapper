@@ -205,26 +205,14 @@ jobs:
           fi
           echo "PR title follows the convention"
 
-  # -------------------------------------------------- dependency review ----
-  #
-  # A new dependency here is a design decision (Sapper is standard-library-first;
-  # a metrics histogram is the one dependency ADR-0003 anticipates, and it gets
-  # its own ADR). Anything with a known vulnerability fails rather than being
-  # triaged later.
-  dependency-review:
-    name: dependency review
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    permissions:
-      contents: read
-      pull-requests: read
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/dependency-review-action@v5
-        with:
-          fail-on-severity: low
-          deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-2.1, LGPL-3.0
-          comment-summary-in-pr: on-failure
+  # Deliberately no dependency-review job. The foundation template carries one,
+  # but actions/dependency-review-action needs the repository's Dependency Graph
+  # API, which is not available here (it reports "Dependency review is not
+  # supported on this repository"). Its two purposes are covered otherwise:
+  # vulnerable dependencies by the govulncheck job above (which is reachability-
+  # aware, so stronger for Go), and a copyleft/new-dependency policy by the rule
+  # that every new dependency is a design decision recorded in an ADR (NFR-02).
+  # Re-add it if the Dependency Graph is ever enabled for this repo.
 
   # -------------------------------------------------------------- gate ----
   #
@@ -241,7 +229,6 @@ jobs:
       - docs
       - adr-immutability
       - commits
-      - dependency-review
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any dependency failed
