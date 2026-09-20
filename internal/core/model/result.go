@@ -1,6 +1,10 @@
 package model
 
-import "time"
+import (
+	"time"
+
+	"github.com/JonasBorgesLM/sapper/internal/core/metrics"
+)
 
 // Result is the on-disk shape of result.json: the single artifact `sapper run`
 // writes and `sapper assert`/`sapper report` read. This is the stable envelope
@@ -22,6 +26,12 @@ type Result struct {
 	// which — an aborted run is honest data, not a failure to hide.
 	Aborted     bool   `json:"aborted"`
 	AbortReason string `json:"abort_reason,omitempty"`
+
+	// Metrics is the aggregate across the run's N repetitions; Verdict is the
+	// SLO evaluation. These attach to the envelope (they are produced by the
+	// collector and the assert stage), and are what `report` and `assert` read.
+	Metrics metrics.Aggregation `json:"metrics"`
+	Verdict Verdict             `json:"verdict"`
 }
 
 // TargetEcho records what was targeted and under which ceilings, so a result is

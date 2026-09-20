@@ -1,0 +1,165 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"net/http"
+	"os"
+	"time"
+
+	"github.com/JonasBorgesLM/sapper/internal/adapters/config"
+	"github.com/JonasBorgesLM/sapper/internal/adapters/httpclient"
+	"github.com/JonasBorgesLM/sapper/internal/core/assert"
+	"github.com/JonasBorgesLM/sapper/internal/core/blastguard"
+	"github.com/JonasBorgesLM/sapper/internal/core/generator"
+	"github.com/JonasBorgesLM/sapper/internal/core/metrics"
+	"github.com/JonasBorgesLM/sapper/internal/core/model"
+	"github.com/JonasBorgesLM/sapper/internal/core/scenario"
+)
+
+// runRun implements `sapper run`: it executes a scenario against the configured
+// target and writes a single result.json.
+func runRun(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("run", flag.ContinueOnError)
+	configPath := fs.String("config", "", "path to the safety config (target, tier, blast-radius caps)")
+	scenarioPath := fs.String("scenario", "", "path to the scenario (load profile + SLOs)")
+	out := fs.String("out", "result.json", "path to write the result JSON")
+	runs := fs.Int("runs", 3, "number of repetitions to aggregate (statistical honesty; ADR-0003)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *configPath == "" || *scenarioPath == "" {
+		return fmt.Errorf("both --config and --scenario are required")
+	}
+
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return err
+	}
+	sc, err := scenario.Load(*scenarioPath)
+	if err != nil {
+		return err
+	}
+
+	result, err := executeRun(ctx, cfg, sc, *runs, interactiveConfirm)
+	if err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encoding result: %w", err)
+	}
+	// result.json carries no secrets (SR-07 redacts them) and is meant to be
+	// read, shared and committed, so 0644 is appropriate rather than gosec's
+	// conservative 0600 default.
+	if err := os.WriteFile(*out, data, 0o644); err != nil { // #nosec G306
+		return fmt.Errorf("writing %s: %w", *out, err)
+	}
+
+	printRunSummary(result, *out)
+	return nil
+}
+
+// executeRun builds the guard, client and generator, runs the scenario `runs`
+// times, aggregates the repetitions, asserts the SLOs, and assembles the result.
+// It is the critical flow and is exercised end to end against a real server in
+// the tests. confirm is used only for a production tier (SR-02).
+func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, runs int, confirm func() (bool, error)) (model.Result, error) {
+	start := time.Now()
+
+	var opts []blastguard.Option
+	if cfg.Target.Tier.IsProduction() {
+		opts = append(opts, blastguard.WithProductionApproval(confirm))
+	}
+	guard, err := blastguard.New(cfg.Target.Tier, cfg.Caps(), opts...)
+	if err != nil {
+		return model.Result{}, err
+	}
+
+	// The kill switch: cancelling ctx (SIGINT/SIGTERM, wired in main) halts the
+	// guard, which stops new load while in-flight requests drain (SR-04).
+	go blastguard.WatchContext(ctx, guard, "shutdown signal received")
+
+	client := httpclient.New(guard, nil)
+	newReq := func(rctx context.Context) (*http.Request, error) {
+		return http.NewRequestWithContext(rctx, http.MethodGet, cfg.Target.BaseURL, nil)
+	}
+	limits := blastguard.AutoAbortLimits{
+		ErrorRateOver: cfg.BlastRadius.AutoAbort.ErrorRateOver,
+		P99Over:       time.Duration(cfg.BlastRadius.AutoAbort.P99Over),
+	}
+	sustained := generator.Sustained{
+		Concurrency: sc.Profile.Concurrency,
+		Duration:    time.Duration(sc.Profile.Duration),
+		Warmup:      time.Duration(sc.Profile.Warmup),
+	}
+
+	if runs < 1 {
+		runs = 1
+	}
+	snaps := make([]metrics.Snapshot, 0, runs)
+	for i := 0; i < runs; i++ {
+		if guard.Stopped() {
+			break // a catastrophic abort or kill switch halts every remaining run
+		}
+		coll := metrics.New()
+		runCtx, cancelRun := context.WithCancel(ctx)
+		go blastguard.WatchAutoAbort(runCtx, guard, func() (float64, time.Duration) {
+			s := coll.Snapshot()
+			return s.ErrorRate, s.Latency.P99
+		}, limits, time.Second)
+		_ = generator.RunSustained(runCtx, client, coll, newReq, sustained)
+		cancelRun()
+		snaps = append(snaps, coll.Snapshot())
+	}
+
+	agg := metrics.Aggregate(snaps)
+	return model.Result{
+		Target:      cfg.TargetEcho(),
+		Scenario:    sc.Name,
+		Profile:     sc.Profile.Type,
+		StartedAt:   start,
+		CompletedAt: time.Now(),
+		Aborted:     guard.Stopped(),
+		AbortReason: guard.Reason(),
+		Metrics:     agg,
+		Verdict:     assert.Evaluate(agg, sc.SLOs),
+	}, nil
+}
+
+// verdictExitCode maps a verdict to a process exit code so CI can gate on it.
+func verdictExitCode(v model.Verdict) int {
+	if v.Passed {
+		return 0
+	}
+	return 1
+}
+
+// interactiveConfirm prompts on stderr and reads a yes/no from stdin. In a
+// non-interactive context (CI) the read fails and it declines, so production is
+// refused there (SR-02).
+func interactiveConfirm() (bool, error) {
+	fmt.Fprint(os.Stderr, "About to generate load against a PRODUCTION target. Type 'yes' to continue: ")
+	var resp string
+	if _, err := fmt.Fscanln(os.Stdin, &resp); err != nil {
+		return false, nil
+	}
+	return resp == "yes", nil
+}
+
+func printRunSummary(r model.Result, out string) {
+	fmt.Printf("run %q (%s) → %s\n", r.Scenario, r.Profile, out)
+	fmt.Printf("  p99 mean %s (±%s over %d runs), error rate %.4f\n",
+		r.Metrics.P99.Mean, r.Metrics.P99.StdDev, r.Metrics.Runs, r.Metrics.ErrorRate.Mean)
+	if r.Aborted {
+		fmt.Printf("  ABORTED: %s\n", r.AbortReason)
+	}
+	verdict := "PASS"
+	if !r.Verdict.Passed {
+		verdict = "FAIL"
+	}
+	fmt.Printf("  verdict: %s (run `sapper assert --in %s` to gate)\n", verdict, out)
+}
