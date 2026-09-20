@@ -1,0 +1,257 @@
+# CI for Sapper — a single-module Go CLI (a tool, not a library).
+#
+# Adapted from the foundation go-ci template. What changed from it: no
+# submodule/workspace machinery (Sapper is one module), and the commit `scopes`
+# list is Sapper's packages. What was kept: every tool pinned to an exact
+# version (tool@latest in CI is not reproducible and hands whoever controls the
+# tool code execution here), and the project-specific guards — the docs check,
+# ADR immutability, and the conventional-commit gate — which are the jobs
+# actually worth having.
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  schedule:
+    # Weekly, so a newly published vulnerability is found by govulncheck rather
+    # than by a user.
+    - cron: "23 6 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The module floor — the version go.mod promises. Build and test run here.
+  GO_VERSION: "1.25"
+  # govulncheck runs on the newest toolchain: a scan at the floor is against a
+  # stdlib that no longer receives fixes, reporting findings no change here can
+  # resolve.
+  GO_SUPPORTED_VERSION: "stable"
+  # golangci-lint typechecks against the stdlib of the toolchain it was built
+  # with and refuses a newer one. This pin and LINT_VERSION move together.
+  LINT_GO_VERSION: "1.26"
+  LINT_VERSION: "v2.12.2"
+  GOSEC_VERSION: "v2.28.0"
+  GOVULNCHECK_VERSION: "v1.7.0"
+  # Fail rather than silently fetch an unlogged module or rewrite go.mod.
+  GOFLAGS: -mod=readonly
+  GOSUMDB: sum.golang.org
+
+jobs:
+  # -------------------------------------------------------------- build ----
+  build:
+    name: build & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: go.sum
+      - name: go build
+        run: go build ./...
+      - name: go vet
+        run: go vet ./...
+      - name: go test -race
+        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+      - name: Report coverage
+        run: |
+          if [ -s coverage.out ]; then
+            go tool cover -func=coverage.out | tail -1
+          else
+            echo "no coverage profile yet (no tests)"
+          fi
+
+  # --------------------------------------------------------------- lint ----
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.LINT_GO_VERSION }}
+          cache-dependency-path: go.sum
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::these files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: ${{ env.LINT_VERSION }}
+      - name: Install gosec ${{ env.GOSEC_VERSION }}
+        run: go install github.com/securego/gosec/v2/cmd/gosec@${{ env.GOSEC_VERSION }}
+      - name: gosec
+        run: gosec -tests -exclude-generated ./...
+
+  # ------------------------------------------------------- govulncheck ----
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_SUPPORTED_VERSION }}
+          cache-dependency-path: go.sum
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }}
+          govulncheck ./...
+
+  # --------------------------------------------------------------- docs ----
+  #
+  # Requirements are cited by id (FR-/SR-/NFR-/IR-) and threats by id (T-) from
+  # ADRs, godoc and tests; a citation pointing at nothing is how a reader
+  # implements a requirement that was renumbered. The ADR index and relative
+  # links are checked in both directions.
+  docs:
+    name: documentation is current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run the documentation checks
+        run: ./.github/scripts/check-docs.sh
+
+  # ---------------------------------------------------- ADR immutability ----
+  #
+  # An ADR is never rewritten: it is amended in place so the reasoning current
+  # at the time stays readable. That is checkable — an amendment only ADDS
+  # lines; a rewrite removes them.
+  adr-immutability:
+    name: accepted ADRs are amended, never rewritten
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: An existing ADR may gain lines, never lose them
+        run: |
+          base='${{ github.event.pull_request.base.sha }}'
+          rewritten=""
+          for f in $(git diff --name-only --diff-filter=M "$base"...HEAD -- 'docs/adr/[0-9]*.md'); do
+            deleted=$(git diff --numstat "$base"...HEAD -- "$f" | awk '{print $2}')
+            [ "${deleted:-0}" -gt 0 ] && rewritten="$rewritten $f($deleted lines removed)"
+          done
+          if [ -n "$rewritten" ]; then
+            echo "::error::an accepted ADR was rewritten rather than amended:$rewritten"
+            echo "A change of mind is a new ADR that supersedes this one, or an"
+            echo "'## Amendment' section appended. Fixing a typo is the one"
+            echo "legitimate case: label the PR 'adr-typo' to skip this check."
+            exit 1
+          fi
+          echo "no accepted ADR lost a line"
+        continue-on-error: ${{ contains(github.event.pull_request.labels.*.name, 'adr-typo') }}
+
+  # ------------------------------------------------------------ commits ----
+  #
+  # `git log` readable a year from now by someone who was not here. WHY goes in
+  # the body; cite the requirement or ADR (Refs #12, Closes #33).
+  commits:
+    name: conventional commits
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Every commit in this PR follows the convention
+        run: |
+          types='feat|fix|docs|test|refactor|perf|build|ci|chore|revert'
+          scopes='core|cli|guard|config|scenario|generator|metrics|assert|report|openapi|injector|model|adr|docs|deps|ci'
+          pattern="^($types)(\\(($scopes)\\))?!?: .+"
+          base='${{ github.event.pull_request.base.sha }}'
+          bad=0
+          while IFS= read -r sha; do
+            subject=$(git log -1 --format=%s "$sha")
+            [ "$(git rev-list --no-walk --count --merges "$sha")" -eq 1 ] && continue
+            if ! printf '%s' "$subject" | grep -qE "$pattern"; then
+              echo "::error::not a conventional commit: $subject"; bad=1; continue
+            fi
+            if [ ${#subject} -gt 72 ]; then
+              echo "::error::subject over 72 characters (${#subject}): $subject"; bad=1
+            fi
+            case "$subject" in
+              *.) echo "::error::subject ends with a period: $subject"; bad=1 ;;
+            esac
+          done < <(git rev-list "$base"..HEAD)
+          if [ "$bad" -ne 0 ]; then
+            echo ""
+            echo "Format:  <type>(<scope>)!: <subject>"
+            echo "Types:   $types"
+            echo "Scopes:  $scopes"
+            exit 1
+          fi
+          echo "all commits follow the convention"
+      - name: The PR title follows the convention
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          types='feat|fix|docs|test|refactor|perf|build|ci|chore|revert'
+          scopes='core|cli|guard|config|scenario|generator|metrics|assert|report|openapi|injector|model|adr|docs|deps|ci'
+          if ! printf '%s' "$TITLE" | grep -qE "^($types)(\\(($scopes)\\))?!?: .+"; then
+            echo "::error::PR title is not a conventional commit: $TITLE"; exit 1
+          fi
+          echo "PR title follows the convention"
+
+  # -------------------------------------------------- dependency review ----
+  #
+  # A new dependency here is a design decision (Sapper is standard-library-first;
+  # a metrics histogram is the one dependency ADR-0003 anticipates, and it gets
+  # its own ADR). Anything with a known vulnerability fails rather than being
+  # triaged later.
+  dependency-review:
+    name: dependency review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/dependency-review-action@v5
+        with:
+          fail-on-severity: low
+          deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-2.1, LGPL-3.0
+          comment-summary-in-pr: on-failure
+
+  # -------------------------------------------------------------- gate ----
+  #
+  # A single required check to protect the branch with. Branch protection can
+  # only require named jobs; a matrix job's name changes when the matrix does,
+  # so a single gate that needs the others is the stable thing to require.
+  ci-ok:
+    name: CI OK
+    if: always()
+    needs:
+      - build
+      - lint
+      - govulncheck
+      - docs
+      - adr-immutability
+      - commits
+      - dependency-review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any dependency failed
+        run: |
+          results='${{ join(needs.*.result, ' ') }}'
+          echo "Upstream results: $results"
+          for r in $results; do
+            case "$r" in
+              success|skipped) ;;
+              *) echo "::error::an upstream job reported '$r'"; exit 1 ;;
+            esac
+          done
+          echo "all upstream jobs passed or were skipped"
