@@ -1,0 +1,6 @@
+schema_version: 1
+target:
+  base_url: http://localhost:8080
+blast_radius:
+  max_concurrency: 50
+  max_duration: 60s
