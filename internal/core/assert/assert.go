@@ -39,6 +39,15 @@ func Evaluate(agg metrics.Aggregation, slos scenario.SLOs) model.Verdict {
 			Detail: fmt.Sprintf("error rate mean %.4f (±%.4f over %d runs) vs < %.4f", agg.ErrorRate.Mean, agg.ErrorRate.StdDev, agg.Runs, threshold),
 		})
 	}
+	if slos.StatusSeen != nil {
+		code := *slos.StatusSeen
+		count := agg.StatusCounts[code]
+		results = append(results, model.SLOResult{
+			Name:   "status_seen",
+			Passed: count > 0,
+			Detail: fmt.Sprintf("status %d observed %d times across %d runs (want ≥ 1 — e.g. the rate limiter's 429)", code, count, agg.Runs),
+		})
+	}
 
 	verdict := model.Verdict{Passed: true, Results: results}
 	for _, r := range results {

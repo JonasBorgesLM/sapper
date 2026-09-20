@@ -10,11 +10,12 @@ import (
 // spread (population standard deviation) across the runs, plus the min and max
 // observed, so a p99 that swings run to run cannot be hidden (ADR-0003, FR-07).
 type Aggregation struct {
-	Runs      int          `json:"runs"`
-	P50       DurationStat `json:"p50"`
-	P90       DurationStat `json:"p90"`
-	P99       DurationStat `json:"p99"`
-	ErrorRate RateStat     `json:"error_rate"`
+	Runs         int          `json:"runs"`
+	StatusCounts map[int]int  `json:"status_counts"`
+	P50          DurationStat `json:"p50"`
+	P90          DurationStat `json:"p90"`
+	P99          DurationStat `json:"p99"`
+	ErrorRate    RateStat     `json:"error_rate"`
 }
 
 // DurationStat is the spread of a latency metric across runs.
@@ -49,12 +50,19 @@ func Aggregate(snaps []Snapshot) Aggregation {
 		p99[i] = float64(s.Latency.P99)
 		rate[i] = s.ErrorRate
 	}
+	statusCounts := make(map[int]int)
+	for _, s := range snaps {
+		for code, c := range s.StatusCounts {
+			statusCounts[code] += c
+		}
+	}
 	return Aggregation{
-		Runs:      n,
-		P50:       durationStatOf(p50),
-		P90:       durationStatOf(p90),
-		P99:       durationStatOf(p99),
-		ErrorRate: rateStatOf(rate),
+		Runs:         n,
+		StatusCounts: statusCounts,
+		P50:          durationStatOf(p50),
+		P90:          durationStatOf(p90),
+		P99:          durationStatOf(p99),
+		ErrorRate:    rateStatOf(rate),
 	}
 }
 

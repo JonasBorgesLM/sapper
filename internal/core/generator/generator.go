@@ -95,3 +95,37 @@ func worker(ctx context.Context, client ports.Requester, coll *metrics.Collector
 		_ = resp.Body.Close()
 	}
 }
+
+// RampUp is the ramp-up profile: concurrency climbs from ~0 to MaxConcurrency
+// over Duration, so the load crosses a rate limiter's knee and reveals where it
+// engages.
+type RampUp struct {
+	MaxConcurrency int
+	Duration       time.Duration
+}
+
+// RunRampUp runs the ramp-up profile. It staggers each worker's start evenly
+// across Duration, so active concurrency rises linearly to MaxConcurrency, then
+// the window closes. Workers share the same guarded client and collector as the
+// sustained profile.
+func RunRampUp(ctx context.Context, client ports.Requester, coll *metrics.Collector, newReq RequestFunc, p RampUp) error {
+	ctx, cancel := context.WithTimeout(ctx, p.Duration)
+	defer cancel()
+
+	var wg sync.WaitGroup
+	for i := 0; i < p.MaxConcurrency; i++ {
+		delay := time.Duration(int64(p.Duration) * int64(i) / int64(p.MaxConcurrency))
+		wg.Add(1)
+		go func(delay time.Duration) {
+			defer wg.Done()
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return
+			}
+			worker(ctx, client, coll, newReq)
+		}(delay)
+	}
+	wg.Wait()
+	return nil
+}

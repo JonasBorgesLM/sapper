@@ -50,3 +50,19 @@ func TestLoadRejectsNonPositiveConcurrency(t *testing.T) {
 		t.Fatalf("Load(zero-concurrency) error = %v, want a refusal naming concurrency", err)
 	}
 }
+
+func TestLoadRampUpWithStatusSeen(t *testing.T) {
+	s, err := Load("testdata/ramp-up.yaml")
+	if err != nil {
+		t.Fatalf("Load(ramp-up) error = %v", err)
+	}
+	if s.Profile.Type != "ramp-up" || s.Profile.Concurrency != 50 {
+		t.Errorf("Profile = %+v", s.Profile)
+	}
+	if s.SLOs.StatusSeen == nil || *s.SLOs.StatusSeen != 429 {
+		t.Errorf("SLOs.StatusSeen = %v, want 429", s.SLOs.StatusSeen)
+	}
+	if s.SLOs.Empty() {
+		t.Error("SLOs.Empty() = true, but status_seen is a declared SLO")
+	}
+}

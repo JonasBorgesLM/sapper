@@ -43,3 +43,14 @@ func TestAggregateEmptyIsZero(t *testing.T) {
 		t.Errorf("Aggregate(nil).Runs = %d, want 0", agg.Runs)
 	}
 }
+
+func TestAggregateSumsStatusCountsAcrossRuns(t *testing.T) {
+	snaps := []Snapshot{
+		{StatusCounts: map[int]int{200: 90, 429: 10}},
+		{StatusCounts: map[int]int{200: 80, 429: 20, 500: 1}},
+	}
+	agg := Aggregate(snaps)
+	if agg.StatusCounts[200] != 170 || agg.StatusCounts[429] != 30 || agg.StatusCounts[500] != 1 {
+		t.Errorf("StatusCounts = %v, want {200:170, 429:30, 500:1}", agg.StatusCounts)
+	}
+}
