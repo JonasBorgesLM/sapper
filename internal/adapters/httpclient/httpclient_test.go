@@ -8,11 +8,21 @@ import (
 	"testing"
 
 	"github.com/JonasBorgesLM/sapper/internal/core/blastguard"
+	"github.com/JonasBorgesLM/sapper/internal/core/model"
 	"github.com/JonasBorgesLM/sapper/internal/ports"
 )
 
 // compile-time proof the guarded client is the ports.Requester implementation.
 var _ ports.Requester = (*Client)(nil)
+
+func openGuard(t *testing.T) *blastguard.BlastGuard {
+	t.Helper()
+	g, err := blastguard.New(model.TierLab)
+	if err != nil {
+		t.Fatalf("blastguard.New(lab) error = %v", err)
+	}
+	return g
+}
 
 func countingServer(t *testing.T) (*httptest.Server, *int32) {
 	t.Helper()
@@ -27,7 +37,7 @@ func countingServer(t *testing.T) (*httptest.Server, *int32) {
 
 func TestDoReachesServerWhenGuardIsOpen(t *testing.T) {
 	srv, hits := countingServer(t)
-	client := New(blastguard.New(), nil)
+	client := New(openGuard(t), nil)
 
 	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
 	resp, err := client.Do(req)
@@ -43,7 +53,7 @@ func TestDoReachesServerWhenGuardIsOpen(t *testing.T) {
 // SR-06: when the guard denies, the request must never reach the network.
 func TestDoBlockedRequestNeverReachesServer(t *testing.T) {
 	srv, hits := countingServer(t)
-	guard := blastguard.New()
+	guard := openGuard(t)
 	guard.Stop("kill switch")
 	client := New(guard, nil)
 

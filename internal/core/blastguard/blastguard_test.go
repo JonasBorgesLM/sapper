@@ -3,10 +3,23 @@ package blastguard
 import (
 	"errors"
 	"testing"
+
+	"github.com/JonasBorgesLM/sapper/internal/core/model"
 )
 
+// running returns an admitting guard on a non-production tier, for the tests
+// that exercise the admission/halt lifecycle rather than the tier gate.
+func running(t *testing.T) *BlastGuard {
+	t.Helper()
+	g, err := New(model.TierLab)
+	if err != nil {
+		t.Fatalf("New(lab) error = %v", err)
+	}
+	return g
+}
+
 func TestAcquireAllowsWhenRunning(t *testing.T) {
-	g := New()
+	g := running(t)
 	release, err := g.Acquire()
 	if err != nil {
 		t.Fatalf("Acquire() error = %v, want nil for a running guard", err)
@@ -15,7 +28,7 @@ func TestAcquireAllowsWhenRunning(t *testing.T) {
 }
 
 func TestAcquireDeniesWhenStopped(t *testing.T) {
-	g := New()
+	g := running(t)
 	g.Stop("kill switch")
 	_, err := g.Acquire()
 	if !errors.Is(err, ErrAborted) {
@@ -24,7 +37,7 @@ func TestAcquireDeniesWhenStopped(t *testing.T) {
 }
 
 func TestStopIsIdempotentAndKeepsFirstReason(t *testing.T) {
-	g := New()
+	g := running(t)
 	g.Stop("first reason")
 	g.Stop("second reason")
 	if !g.Stopped() {
@@ -36,7 +49,7 @@ func TestStopIsIdempotentAndKeepsFirstReason(t *testing.T) {
 }
 
 func TestCheckDeniesWhenStopped(t *testing.T) {
-	g := New()
+	g := running(t)
 	if err := g.Check(); err != nil {
 		t.Fatalf("Check() error = %v, want nil for a running guard", err)
 	}

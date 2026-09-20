@@ -24,6 +24,8 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+
+	"github.com/JonasBorgesLM/sapper/internal/core/model"
 )
 
 // ErrAborted is returned by Acquire once the guard has been stopped — by the
@@ -34,15 +36,68 @@ var ErrAborted = errors.New("blastguard: load aborted")
 // BlastGuard is the single point of load admission. It is safe for concurrent
 // use: the generator drives it from many goroutines at once.
 type BlastGuard struct {
+	tier model.Tier
+
 	mu      sync.Mutex
 	stopped bool
 	reason  string
 }
 
-// New builds a running guard. Construction will grow to take the tier and caps
-// (SR-01, SR-03); for now a fresh guard admits load until it is stopped.
-func New() *BlastGuard {
-	return &BlastGuard{}
+// Option configures a guard at construction. It is where the production
+// approval (and, later, the caps) are supplied.
+type Option func(*config) error
+
+type config struct {
+	prodApprovalGiven bool
+	confirm           func() (bool, error)
+}
+
+// WithProductionApproval opts a run in to the production tier. It stands for the
+// operator's explicit, noisy flag; confirm is the interactive confirmation
+// (SR-02). A nil confirm models a non-interactive context (CI), where
+// production is refused because no human confirmation can be obtained.
+func WithProductionApproval(confirm func() (bool, error)) Option {
+	return func(c *config) error {
+		c.prodApprovalGiven = true
+		c.confirm = confirm
+		return nil
+	}
+}
+
+// New builds a guard for the given tier, enforcing the tier gate (SR-01/SR-02)
+// at construction: it independently refuses an unknown or empty tier (defense
+// in depth, not trusting the config loader), and refuses the production tier
+// unless WithProductionApproval was supplied AND its interactive confirmation
+// succeeds. A guard is only returned when it is authorised to generate load.
+func New(tier model.Tier, opts ...Option) (*BlastGuard, error) {
+	if !tier.Valid() {
+		return nil, fmt.Errorf("blastguard: tier %q is not authorised (want lab|staging|authorized|production) (SR-01)", tier)
+	}
+
+	var cfg config
+	for _, opt := range opts {
+		if err := opt(&cfg); err != nil {
+			return nil, err
+		}
+	}
+
+	if tier.IsProduction() {
+		if !cfg.prodApprovalGiven {
+			return nil, errors.New("blastguard: the production tier requires explicit approval (the production flag) (SR-02)")
+		}
+		if cfg.confirm == nil {
+			return nil, errors.New("blastguard: the production tier requires interactive confirmation; refusing in a non-interactive context (SR-02)")
+		}
+		ok, err := cfg.confirm()
+		if err != nil {
+			return nil, fmt.Errorf("blastguard: production confirmation failed: %w", err)
+		}
+		if !ok {
+			return nil, errors.New("blastguard: production run not confirmed; aborting (SR-02)")
+		}
+	}
+
+	return &BlastGuard{tier: tier}, nil
 }
 
 // Check reports whether the guard is currently open, without admitting a
