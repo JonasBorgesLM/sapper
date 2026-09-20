@@ -31,6 +31,18 @@ func New() *Collector {
 	return &Collector{statusCounts: make(map[int]int)}
 }
 
+// Reset discards everything recorded so far. The generator calls it when the
+// warm-up window ends, so warm-up samples are excluded from the reported
+// statistics (FR-07).
+func (c *Collector) Reset() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.latencies = nil
+	c.statusCounts = make(map[int]int)
+	c.errors = 0
+	c.total = 0
+}
+
 // Record logs one request. latency is the time to its outcome. A non-nil err is
 // a transport-level failure (connection refused, timeout) and counts toward the
 // error rate; otherwise status is tallied. A 5xx is a status, not an error —
