@@ -1,0 +1,9 @@
+name: sustained-baseline
+profile:
+  type: sustained
+  concurrency: 10
+  duration: 30s
+  warmup: 5s
+slos:
+  p99_under: 200ms
+  error_rate_under: 0.01

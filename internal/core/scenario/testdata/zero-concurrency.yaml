@@ -1,0 +1,7 @@
+name: zero
+profile:
+  type: sustained
+  concurrency: 0
+  duration: 30s
+slos:
+  p99_under: 200ms

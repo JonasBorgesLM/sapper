@@ -1,0 +1,5 @@
+name: no-slos
+profile:
+  type: sustained
+  concurrency: 10
+  duration: 30s
