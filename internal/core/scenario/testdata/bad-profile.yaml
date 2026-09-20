@@ -1,0 +1,7 @@
+name: bad
+profile:
+  type: teleport
+  concurrency: 10
+  duration: 30s
+slos:
+  p99_under: 200ms
