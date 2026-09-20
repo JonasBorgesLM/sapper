@@ -1,0 +1,7 @@
+schema_version: 1
+target:
+  base_url: localhost:8080
+  tier: lab
+blast_radius:
+  max_concurrency: 50
+  max_duration: 60s

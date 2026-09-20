@@ -1,0 +1,19 @@
+# Example config. Secrets are written as ${VAR} and read from the environment.
+# This comment mentions ${SAPPER_TEST_UNSET_IN_COMMENT} on purpose: a comment
+# describes the syntax, it must never trigger a missing-variable error.
+schema_version: 1
+target:
+  base_url: http://localhost:8080
+  tier: lab
+blast_radius:
+  max_concurrency: 50
+  max_duration: 60s
+  auto_abort:
+    error_rate_over: 0.5
+    p99_over: 2s
+auth:
+  login_endpoint: /login
+  credentials:
+    username: admin
+    password: ${SAPPER_TEST_PW}
+  token_path: data.access_token
