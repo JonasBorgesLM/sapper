@@ -1,0 +1,7 @@
+name: ramp-to-limit
+profile:
+  type: ramp-up
+  concurrency: 50
+  duration: 20s
+slos:
+  status_seen: 429

@@ -91,12 +91,6 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 		ErrorRateOver: cfg.BlastRadius.AutoAbort.ErrorRateOver,
 		P99Over:       time.Duration(cfg.BlastRadius.AutoAbort.P99Over),
 	}
-	sustained := generator.Sustained{
-		Concurrency: sc.Profile.Concurrency,
-		Duration:    time.Duration(sc.Profile.Duration),
-		Warmup:      time.Duration(sc.Profile.Warmup),
-	}
-
 	if runs < 1 {
 		runs = 1
 	}
@@ -111,7 +105,7 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 			s := coll.Snapshot()
 			return s.ErrorRate, s.Latency.P99
 		}, limits, time.Second)
-		_ = generator.RunSustained(runCtx, client, coll, newReq, sustained)
+		runProfile(runCtx, sc, client, coll, newReq)
 		cancelRun()
 		snaps = append(snaps, coll.Snapshot())
 	}
@@ -128,6 +122,24 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 		Metrics:     agg,
 		Verdict:     assert.Evaluate(agg, sc.SLOs),
 	}, nil
+}
+
+// runProfile drives one repetition of the scenario's load profile through the
+// guarded client into coll. New profiles (spike, soak) add a case here.
+func runProfile(ctx context.Context, sc *scenario.Scenario, client *httpclient.Client, coll *metrics.Collector, newReq generator.RequestFunc) {
+	switch sc.Profile.Type {
+	case scenario.ProfileRampUp:
+		_ = generator.RunRampUp(ctx, client, coll, newReq, generator.RampUp{
+			MaxConcurrency: sc.Profile.Concurrency,
+			Duration:       time.Duration(sc.Profile.Duration),
+		})
+	default: // sustained
+		_ = generator.RunSustained(ctx, client, coll, newReq, generator.Sustained{
+			Concurrency: sc.Profile.Concurrency,
+			Duration:    time.Duration(sc.Profile.Duration),
+			Warmup:      time.Duration(sc.Profile.Warmup),
+		})
+	}
 }
 
 // verdictExitCode maps a verdict to a process exit code so CI can gate on it.

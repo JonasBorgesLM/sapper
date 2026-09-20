@@ -18,7 +18,10 @@ import (
 
 // ProfileSustained is the only load profile v1 implements. Others (ramp-up,
 // spike, soak) reuse the same engine and are added by their own issues.
-const ProfileSustained = "sustained"
+const (
+	ProfileSustained = "sustained"
+	ProfileRampUp    = "ramp-up"
+)
 
 // Scenario is the root of a scenario file.
 type Scenario struct {
@@ -41,11 +44,12 @@ type Profile struct {
 type SLOs struct {
 	P99Under       *Duration `yaml:"p99_under"`
 	ErrorRateUnder *float64  `yaml:"error_rate_under"`
+	StatusSeen     *int      `yaml:"status_seen"`
 }
 
 // Empty reports whether no SLO was declared.
 func (s SLOs) Empty() bool {
-	return s.P99Under == nil && s.ErrorRateUnder == nil
+	return s.P99Under == nil && s.ErrorRateUnder == nil && s.StatusSeen == nil
 }
 
 // Duration unmarshals a YAML duration string like "30s".
@@ -89,8 +93,8 @@ func (s *Scenario) validate() error {
 	if s.Name == "" {
 		errs = append(errs, errors.New("name is required"))
 	}
-	if s.Profile.Type != ProfileSustained {
-		errs = append(errs, fmt.Errorf("profile.type %q is not supported (want %q)", s.Profile.Type, ProfileSustained))
+	if s.Profile.Type != ProfileSustained && s.Profile.Type != ProfileRampUp {
+		errs = append(errs, fmt.Errorf("profile.type %q is not supported (want %q or %q)", s.Profile.Type, ProfileSustained, ProfileRampUp))
 	}
 	if s.Profile.Concurrency <= 0 {
 		errs = append(errs, fmt.Errorf("profile.concurrency must be a positive integer, got %d", s.Profile.Concurrency))

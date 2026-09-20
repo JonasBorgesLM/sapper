@@ -69,3 +69,20 @@ func TestRunSustainedStopsWhenGuardHalted(t *testing.T) {
 		t.Errorf("recorded %d requests, want 0 — a halted guard admits nothing", got)
 	}
 }
+
+func TestRunRampUpProducesRecords(t *testing.T) {
+	client, _, coll, newReq := harness(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	err := RunRampUp(context.Background(), client, coll, newReq, RampUp{MaxConcurrency: 6, Duration: 100 * time.Millisecond})
+	if err != nil {
+		t.Fatalf("RunRampUp() error = %v", err)
+	}
+	s := coll.Snapshot()
+	if s.Total == 0 {
+		t.Fatal("no requests recorded during ramp-up")
+	}
+	if s.Errors != 0 {
+		t.Errorf("Errors = %d, want 0 against a healthy server", s.Errors)
+	}
+}

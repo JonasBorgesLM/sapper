@@ -48,3 +48,16 @@ func TestEvaluateFailsWhenErrorRateOver(t *testing.T) {
 		t.Error("Verdict.Passed = true, want false when the error rate exceeds the SLO")
 	}
 }
+
+func TestEvaluateStatusSeen(t *testing.T) {
+	agg := metrics.Aggregation{Runs: 1, StatusCounts: map[int]int{200: 100, 429: 5}}
+
+	seen := 429
+	if v := Evaluate(agg, scenario.SLOs{StatusSeen: &seen}); !v.Passed {
+		t.Errorf("status_seen 429 failed though 429 appeared: %+v", v.Results)
+	}
+	notSeen := 503
+	if v := Evaluate(agg, scenario.SLOs{StatusSeen: &notSeen}); v.Passed {
+		t.Error("status_seen 503 passed though 503 never appeared")
+	}
+}
