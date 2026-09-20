@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/JonasBorgesLM/sapper/internal/core/blastguard"
 	"github.com/JonasBorgesLM/sapper/internal/core/model"
@@ -17,7 +18,7 @@ var _ ports.Requester = (*Client)(nil)
 
 func openGuard(t *testing.T) *blastguard.BlastGuard {
 	t.Helper()
-	g, err := blastguard.New(model.TierLab)
+	g, err := blastguard.New(model.TierLab, model.Caps{MaxConcurrency: 4, MaxDuration: time.Minute})
 	if err != nil {
 		t.Fatalf("blastguard.New(lab) error = %v", err)
 	}

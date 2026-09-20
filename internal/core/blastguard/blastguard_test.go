@@ -3,6 +3,7 @@ package blastguard
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/JonasBorgesLM/sapper/internal/core/model"
 )
@@ -11,7 +12,7 @@ import (
 // that exercise the admission/halt lifecycle rather than the tier gate.
 func running(t *testing.T) *BlastGuard {
 	t.Helper()
-	g, err := New(model.TierLab)
+	g, err := New(model.TierLab, model.Caps{MaxConcurrency: 4, MaxDuration: time.Minute})
 	if err != nil {
 		t.Fatalf("New(lab) error = %v", err)
 	}
