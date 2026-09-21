@@ -1,0 +1,8 @@
+name: soak-stability
+profile:
+  type: soak
+  concurrency: 5
+  duration: 60s
+  windows: 6
+slos:
+  degradation_under: 1.5

@@ -70,3 +70,15 @@ func Recovery(before, after metrics.Snapshot, factor float64) model.SLOResult {
 		Detail: fmt.Sprintf("post-spike p99 %s vs baseline %s × %.2f = %s", after.Latency.P99, before.Latency.P99, factor, threshold),
 	}
 }
+
+// Degradation evaluates the soak profile's SLO: the last measurement window's
+// p99 must be within factor× the first window's, so slow degradation over a long
+// run (a leak, a growing queue) is caught. Like Recovery it compares two phases.
+func Degradation(first, last metrics.Snapshot, factor float64) model.SLOResult {
+	threshold := time.Duration(float64(first.Latency.P99) * factor)
+	return model.SLOResult{
+		Name:   "degradation_under",
+		Passed: last.Latency.P99 <= threshold,
+		Detail: fmt.Sprintf("final-window p99 %s vs first-window %s × %.2f = %s", last.Latency.P99, first.Latency.P99, factor, threshold),
+	}
+}
