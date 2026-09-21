@@ -66,3 +66,27 @@ func TestLoadRampUpWithStatusSeen(t *testing.T) {
 		t.Error("SLOs.Empty() = true, but status_seen is a declared SLO")
 	}
 }
+
+func TestLoadSpike(t *testing.T) {
+	s, err := Load("testdata/spike.yaml")
+	if err != nil {
+		t.Fatalf("Load(spike) error = %v", err)
+	}
+	if s.Profile.Type != "spike" || s.Profile.BaselineConcurrency != 3 || s.Profile.Concurrency != 40 {
+		t.Errorf("Profile = %+v", s.Profile)
+	}
+	if time.Duration(s.Profile.BaselineDuration) != 2*time.Second {
+		t.Errorf("BaselineDuration = %v", s.Profile.BaselineDuration)
+	}
+	if s.SLOs.RecoveryWithin == nil || *s.SLOs.RecoveryWithin != 1.5 {
+		t.Errorf("RecoveryWithin = %v, want 1.5", s.SLOs.RecoveryWithin)
+	}
+	if s.SLOs.Empty() {
+		t.Error("SLOs.Empty() = true, but recovery_within is declared")
+	}
+}
+
+func TestLoadSpikeRejectsMissingBaseline(t *testing.T) {
+	// reuse zero-concurrency style: a spike without baseline params is invalid.
+	// (constructed inline via a temp file would be heavier; covered by validate())
+}

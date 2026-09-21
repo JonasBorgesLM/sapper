@@ -1,0 +1,9 @@
+name: spike-recovery
+profile:
+  type: spike
+  baseline_concurrency: 3
+  baseline_duration: 2s
+  concurrency: 40
+  duration: 1s
+slos:
+  recovery_within: 1.5

@@ -57,3 +57,16 @@ func Evaluate(agg metrics.Aggregation, slos scenario.SLOs) model.Verdict {
 	}
 	return verdict
 }
+
+// Recovery evaluates the spike profile's recovery SLO: after the spike, the p99
+// must return to within factor× the pre-spike baseline p99. It is separate from
+// Evaluate because it compares two phases rather than an aggregate against a
+// fixed threshold.
+func Recovery(before, after metrics.Snapshot, factor float64) model.SLOResult {
+	threshold := time.Duration(float64(before.Latency.P99) * factor)
+	return model.SLOResult{
+		Name:   "recovery_within",
+		Passed: after.Latency.P99 <= threshold,
+		Detail: fmt.Sprintf("post-spike p99 %s vs baseline %s × %.2f = %s", after.Latency.P99, before.Latency.P99, factor, threshold),
+	}
+}

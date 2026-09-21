@@ -91,6 +91,11 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 		ErrorRateOver: cfg.BlastRadius.AutoAbort.ErrorRateOver,
 		P99Over:       time.Duration(cfg.BlastRadius.AutoAbort.P99Over),
 	}
+
+	if sc.Profile.Type == scenario.ProfileSpike {
+		return executeSpike(ctx, cfg, sc, guard, client, newReq, limits, start), nil
+	}
+
 	if runs < 1 {
 		runs = 1
 	}
@@ -122,6 +127,57 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 		Metrics:     agg,
 		Verdict:     assert.Evaluate(agg, sc.SLOs),
 	}, nil
+}
+
+// executeSpike runs the spike profile: a baseline phase, a peak, then a
+// baseline phase again. The recovery SLO compares the after-baseline p99 to the
+// before-baseline p99, so the run answers "did latency return to normal after
+// the spike?" rather than a fixed threshold. Metrics report the aggregate of
+// all three phases; the verdict combines any generic SLOs with the recovery.
+func executeSpike(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, guard *blastguard.BlastGuard, client *httpclient.Client, newReq generator.RequestFunc, limits blastguard.AutoAbortLimits, start time.Time) model.Result {
+	baseline := generator.Sustained{Concurrency: sc.Profile.BaselineConcurrency, Duration: time.Duration(sc.Profile.BaselineDuration)}
+	peak := generator.Sustained{Concurrency: sc.Profile.Concurrency, Duration: time.Duration(sc.Profile.Duration)}
+
+	runPhase := func(p generator.Sustained) metrics.Snapshot {
+		if guard.Stopped() {
+			return metrics.Snapshot{}
+		}
+		coll := metrics.New()
+		phaseCtx, cancel := context.WithCancel(ctx)
+		go blastguard.WatchAutoAbort(phaseCtx, guard, func() (float64, time.Duration) {
+			s := coll.Snapshot()
+			return s.ErrorRate, s.Latency.P99
+		}, limits, time.Second)
+		_ = generator.RunSustained(phaseCtx, client, coll, newReq, p)
+		cancel()
+		return coll.Snapshot()
+	}
+
+	before := runPhase(baseline)
+	spikeSnap := runPhase(peak)
+	after := runPhase(baseline)
+
+	agg := metrics.Aggregate([]metrics.Snapshot{before, spikeSnap, after})
+	verdict := assert.Evaluate(agg, sc.SLOs)
+	if sc.SLOs.RecoveryWithin != nil {
+		rec := assert.Recovery(before, after, *sc.SLOs.RecoveryWithin)
+		verdict.Results = append(verdict.Results, rec)
+		if !rec.Passed {
+			verdict.Passed = false
+		}
+	}
+
+	return model.Result{
+		Target:      cfg.TargetEcho(),
+		Scenario:    sc.Name,
+		Profile:     sc.Profile.Type,
+		StartedAt:   start,
+		CompletedAt: time.Now(),
+		Aborted:     guard.Stopped(),
+		AbortReason: guard.Reason(),
+		Metrics:     agg,
+		Verdict:     verdict,
+	}
 }
 
 // runProfile drives one repetition of the scenario's load profile through the
