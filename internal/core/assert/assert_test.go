@@ -74,3 +74,13 @@ func TestRecovery(t *testing.T) {
 		t.Errorf("recovery should fail: %s", r.Detail)
 	}
 }
+
+func TestDegradation(t *testing.T) {
+	first := metrics.Snapshot{Latency: metrics.LatencyStats{P99: 100 * time.Millisecond}}
+	if r := Degradation(first, metrics.Snapshot{Latency: metrics.LatencyStats{P99: 120 * time.Millisecond}}, 1.5); !r.Passed {
+		t.Errorf("stable soak should pass: %s", r.Detail)
+	}
+	if r := Degradation(first, metrics.Snapshot{Latency: metrics.LatencyStats{P99: 200 * time.Millisecond}}, 1.5); r.Passed {
+		t.Errorf("degraded soak should fail: %s", r.Detail)
+	}
+}

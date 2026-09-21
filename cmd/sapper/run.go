@@ -95,6 +95,9 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 	if sc.Profile.Type == scenario.ProfileSpike {
 		return executeSpike(ctx, cfg, sc, guard, client, newReq, limits, start), nil
 	}
+	if sc.Profile.Type == scenario.ProfileSoak {
+		return executeSoak(ctx, cfg, sc, guard, client, newReq, limits, start), nil
+	}
 
 	if runs < 1 {
 		runs = 1
@@ -138,24 +141,9 @@ func executeSpike(ctx context.Context, cfg *config.Config, sc *scenario.Scenario
 	baseline := generator.Sustained{Concurrency: sc.Profile.BaselineConcurrency, Duration: time.Duration(sc.Profile.BaselineDuration)}
 	peak := generator.Sustained{Concurrency: sc.Profile.Concurrency, Duration: time.Duration(sc.Profile.Duration)}
 
-	runPhase := func(p generator.Sustained) metrics.Snapshot {
-		if guard.Stopped() {
-			return metrics.Snapshot{}
-		}
-		coll := metrics.New()
-		phaseCtx, cancel := context.WithCancel(ctx)
-		go blastguard.WatchAutoAbort(phaseCtx, guard, func() (float64, time.Duration) {
-			s := coll.Snapshot()
-			return s.ErrorRate, s.Latency.P99
-		}, limits, time.Second)
-		_ = generator.RunSustained(phaseCtx, client, coll, newReq, p)
-		cancel()
-		return coll.Snapshot()
-	}
-
-	before := runPhase(baseline)
-	spikeSnap := runPhase(peak)
-	after := runPhase(baseline)
+	before := runGuardedPhase(ctx, guard, client, newReq, limits, baseline)
+	spikeSnap := runGuardedPhase(ctx, guard, client, newReq, limits, peak)
+	after := runGuardedPhase(ctx, guard, client, newReq, limits, baseline)
 
 	agg := metrics.Aggregate([]metrics.Snapshot{before, spikeSnap, after})
 	verdict := assert.Evaluate(agg, sc.SLOs)
@@ -163,6 +151,63 @@ func executeSpike(ctx context.Context, cfg *config.Config, sc *scenario.Scenario
 		rec := assert.Recovery(before, after, *sc.SLOs.RecoveryWithin)
 		verdict.Results = append(verdict.Results, rec)
 		if !rec.Passed {
+			verdict.Passed = false
+		}
+	}
+
+	return model.Result{
+		Target:      cfg.TargetEcho(),
+		Scenario:    sc.Name,
+		Profile:     sc.Profile.Type,
+		StartedAt:   start,
+		CompletedAt: time.Now(),
+		Aborted:     guard.Stopped(),
+		AbortReason: guard.Reason(),
+		Metrics:     agg,
+		Verdict:     verdict,
+	}
+}
+
+// runGuardedPhase runs one sustained phase into a fresh collector, with its own
+// auto-abort watcher, and returns the snapshot. It is the building block the
+// spike (before/peak/after) and soak (N windows) profiles share.
+func runGuardedPhase(ctx context.Context, guard *blastguard.BlastGuard, client *httpclient.Client, newReq generator.RequestFunc, limits blastguard.AutoAbortLimits, p generator.Sustained) metrics.Snapshot {
+	if guard.Stopped() {
+		return metrics.Snapshot{}
+	}
+	coll := metrics.New()
+	phaseCtx, cancel := context.WithCancel(ctx)
+	go blastguard.WatchAutoAbort(phaseCtx, guard, func() (float64, time.Duration) {
+		s := coll.Snapshot()
+		return s.ErrorRate, s.Latency.P99
+	}, limits, time.Second)
+	_ = generator.RunSustained(phaseCtx, client, coll, newReq, p)
+	cancel()
+	return coll.Snapshot()
+}
+
+// executeSoak runs the soak profile: moderate load split into N windows, to
+// catch slow degradation (a leak, a growing queue). The degradation SLO compares
+// the last window's p99 to the first's. Metrics report the aggregate of all
+// windows.
+func executeSoak(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, guard *blastguard.BlastGuard, client *httpclient.Client, newReq generator.RequestFunc, limits blastguard.AutoAbortLimits, start time.Time) model.Result {
+	windowDur := time.Duration(sc.Profile.Duration) / time.Duration(sc.Profile.Windows)
+	per := generator.Sustained{Concurrency: sc.Profile.Concurrency, Duration: windowDur}
+
+	snaps := make([]metrics.Snapshot, 0, sc.Profile.Windows)
+	for i := 0; i < sc.Profile.Windows; i++ {
+		if guard.Stopped() {
+			break
+		}
+		snaps = append(snaps, runGuardedPhase(ctx, guard, client, newReq, limits, per))
+	}
+
+	agg := metrics.Aggregate(snaps)
+	verdict := assert.Evaluate(agg, sc.SLOs)
+	if sc.SLOs.DegradationUnder != nil && len(snaps) >= 2 {
+		d := assert.Degradation(snaps[0], snaps[len(snaps)-1], *sc.SLOs.DegradationUnder)
+		verdict.Results = append(verdict.Results, d)
+		if !d.Passed {
 			verdict.Passed = false
 		}
 	}

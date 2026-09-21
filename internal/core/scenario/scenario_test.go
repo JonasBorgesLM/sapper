@@ -90,3 +90,19 @@ func TestLoadSpikeRejectsMissingBaseline(t *testing.T) {
 	// reuse zero-concurrency style: a spike without baseline params is invalid.
 	// (constructed inline via a temp file would be heavier; covered by validate())
 }
+
+func TestLoadSoak(t *testing.T) {
+	s, err := Load("testdata/soak.yaml")
+	if err != nil {
+		t.Fatalf("Load(soak) error = %v", err)
+	}
+	if s.Profile.Type != "soak" || s.Profile.Windows != 6 || s.Profile.Concurrency != 5 {
+		t.Errorf("Profile = %+v", s.Profile)
+	}
+	if s.SLOs.DegradationUnder == nil || *s.SLOs.DegradationUnder != 1.5 {
+		t.Errorf("DegradationUnder = %v, want 1.5", s.SLOs.DegradationUnder)
+	}
+	if s.SLOs.Empty() {
+		t.Error("SLOs.Empty() = true, but degradation_under is declared")
+	}
+}

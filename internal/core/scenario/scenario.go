@@ -22,6 +22,7 @@ const (
 	ProfileSustained = "sustained"
 	ProfileRampUp    = "ramp-up"
 	ProfileSpike     = "spike"
+	ProfileSoak      = "soak"
 )
 
 // Scenario is the root of a scenario file.
@@ -42,6 +43,10 @@ type Profile struct {
 	// phase itself uses Concurrency (the peak) for Duration.
 	BaselineConcurrency int      `yaml:"baseline_concurrency"`
 	BaselineDuration    Duration `yaml:"baseline_duration"`
+
+	// Soak-only: the number of measurement windows the run is split into, to
+	// detect slow degradation across them (at least 2).
+	Windows int `yaml:"windows"`
 }
 
 // SLOs are the constraints a run is asserted against. Each set field is one
@@ -53,11 +58,13 @@ type SLOs struct {
 	StatusSeen     *int      `yaml:"status_seen"`
 	// Spike-only: post-spike p99 must be within this factor of the baseline p99.
 	RecoveryWithin *float64 `yaml:"recovery_within"`
+	// Soak-only: the last window's p99 must be within this factor of the first.
+	DegradationUnder *float64 `yaml:"degradation_under"`
 }
 
 // Empty reports whether no SLO was declared.
 func (s SLOs) Empty() bool {
-	return s.P99Under == nil && s.ErrorRateUnder == nil && s.StatusSeen == nil && s.RecoveryWithin == nil
+	return s.P99Under == nil && s.ErrorRateUnder == nil && s.StatusSeen == nil && s.RecoveryWithin == nil && s.DegradationUnder == nil
 }
 
 // Duration unmarshals a YAML duration string like "30s".
@@ -125,8 +132,18 @@ func (s *Scenario) validate() error {
 		if time.Duration(s.Profile.Duration) <= 0 {
 			errs = append(errs, errors.New("profile.duration (the spike length) must be a positive duration"))
 		}
+	case ProfileSoak:
+		if s.Profile.Concurrency <= 0 {
+			errs = append(errs, fmt.Errorf("profile.concurrency must be a positive integer, got %d", s.Profile.Concurrency))
+		}
+		if time.Duration(s.Profile.Duration) <= 0 {
+			errs = append(errs, errors.New("profile.duration must be a positive duration"))
+		}
+		if s.Profile.Windows < 2 {
+			errs = append(errs, fmt.Errorf("profile.windows must be at least 2 to detect degradation, got %d", s.Profile.Windows))
+		}
 	default:
-		errs = append(errs, fmt.Errorf("profile.type %q is not supported (want %q, %q or %q)", s.Profile.Type, ProfileSustained, ProfileRampUp, ProfileSpike))
+		errs = append(errs, fmt.Errorf("profile.type %q is not supported (want %q, %q, %q or %q)", s.Profile.Type, ProfileSustained, ProfileRampUp, ProfileSpike, ProfileSoak))
 	}
 	if s.SLOs.Empty() {
 		errs = append(errs, errors.New("at least one SLO is required; a run with no SLO is a misconfiguration, not a benchmark (ADR-0001)"))
