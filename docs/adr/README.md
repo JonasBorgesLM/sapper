@@ -14,19 +14,20 @@ New records start from [`TEMPLATE.md`](TEMPLATE.md).
 | [`0001`](0001-assertion-not-benchmark.md) | Sapper asserts against SLOs; it is not a benchmark | Accepted | — |
 | [`0002`](0002-blastguard-middleware.md) | BlastGuard is mandatory middleware in the one HTTP client | Accepted | — |
 | [`0003`](0003-statistical-honesty.md) | Statistical honesty replaces byte-for-byte determinism | Accepted | — |
-| [`0004`](0004-defer-fault-injector.md) | Defer the fault injector; reserve the port in v1 | Accepted | — |
+| [`0004`](0004-defer-fault-injector.md) | Defer the fault injector; reserve the port in v1 | Accepted | `0007` |
 | [`0005`](0005-warden-sapper-naming.md) | Warden inspects, Sapper mines; scanner renamed to Warden | Accepted | — |
 | [`0006`](0006-reuse-from-warden.md) | Reuse Warden's config style, OpenAPI import, and JSON pipeline | Accepted | — |
+| [`0007`](0007-fault-injection-approach.md) | Build a minimal in-process fault proxy, not integrate toxiproxy | Accepted | — |
 
 ## Reopening criteria on the record
 
 | ADR | Reopen when |
 | --- | --- |
-| `0004` | Case 4 (breaker validation) is scheduled — decide build-own vs. external proxy then |
+| `0007` | A scenario needs a fault type the minimal proxy cannot express (bandwidth, slicer, partial writes) — integrate toxiproxy then |
 | `0003` | A metrics histogram dependency is chosen — record it in its own ADR |
 
 ## Open questions
 
-- **Own vs. external (toxiproxy) fault-injection proxy.** Deferred with the
-  injector itself; see `0004`. Recorded here so it does not look decided.
+- ~~Own vs. external (toxiproxy) fault-injection proxy.~~ Decided by
+  [`0007`](0007-fault-injection-approach.md): build a minimal in-process proxy.
 - **Non-HTTP protocols (gRPC, …).** No ADR yet; add one if a requirement appears.
