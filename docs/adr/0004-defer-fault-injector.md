@@ -37,3 +37,10 @@ The tie-in is the reward for a working spine, not the first milestone.
 ## Reopening criterion
 Case 4 is scheduled. At that point: (1) decide build-own vs. external toxiproxy,
 in a new ADR; (2) revisit whether the reserved port shape survived contact.
+
+## Amendment (ADR-0007)
+The build-vs-buy question this ADR deferred — "own proxy vs. integrate
+toxiproxy" — is resolved by [ADR-0007](0007-fault-injection-approach.md): build
+a minimal in-process fault proxy. This ADR's decision to reserve the port and
+not build behind it in v1 stands unchanged; ADR-0007 only settles *how* the
+adapter is built when Case 4 is implemented.
