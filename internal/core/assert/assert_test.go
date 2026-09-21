@@ -61,3 +61,16 @@ func TestEvaluateStatusSeen(t *testing.T) {
 		t.Error("status_seen 503 passed though 503 never appeared")
 	}
 }
+
+func TestRecovery(t *testing.T) {
+	before := metrics.Snapshot{Latency: metrics.LatencyStats{P99: 100 * time.Millisecond}}
+
+	ok := metrics.Snapshot{Latency: metrics.LatencyStats{P99: 120 * time.Millisecond}}
+	if r := Recovery(before, ok, 1.5); !r.Passed { // 120ms <= 100ms*1.5=150ms
+		t.Errorf("recovery should pass: %s", r.Detail)
+	}
+	bad := metrics.Snapshot{Latency: metrics.LatencyStats{P99: 200 * time.Millisecond}}
+	if r := Recovery(before, bad, 1.5); r.Passed { // 200ms > 150ms
+		t.Errorf("recovery should fail: %s", r.Detail)
+	}
+}

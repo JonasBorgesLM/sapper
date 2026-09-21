@@ -21,6 +21,7 @@ import (
 const (
 	ProfileSustained = "sustained"
 	ProfileRampUp    = "ramp-up"
+	ProfileSpike     = "spike"
 )
 
 // Scenario is the root of a scenario file.
@@ -36,6 +37,11 @@ type Profile struct {
 	Concurrency int      `yaml:"concurrency"`
 	Duration    Duration `yaml:"duration"`
 	Warmup      Duration `yaml:"warmup"`
+
+	// Spike-only: the baseline phase run before and after the spike. The spike
+	// phase itself uses Concurrency (the peak) for Duration.
+	BaselineConcurrency int      `yaml:"baseline_concurrency"`
+	BaselineDuration    Duration `yaml:"baseline_duration"`
 }
 
 // SLOs are the constraints a run is asserted against. Each set field is one
@@ -45,11 +51,13 @@ type SLOs struct {
 	P99Under       *Duration `yaml:"p99_under"`
 	ErrorRateUnder *float64  `yaml:"error_rate_under"`
 	StatusSeen     *int      `yaml:"status_seen"`
+	// Spike-only: post-spike p99 must be within this factor of the baseline p99.
+	RecoveryWithin *float64 `yaml:"recovery_within"`
 }
 
 // Empty reports whether no SLO was declared.
 func (s SLOs) Empty() bool {
-	return s.P99Under == nil && s.ErrorRateUnder == nil && s.StatusSeen == nil
+	return s.P99Under == nil && s.ErrorRateUnder == nil && s.StatusSeen == nil && s.RecoveryWithin == nil
 }
 
 // Duration unmarshals a YAML duration string like "30s".
@@ -93,17 +101,32 @@ func (s *Scenario) validate() error {
 	if s.Name == "" {
 		errs = append(errs, errors.New("name is required"))
 	}
-	if s.Profile.Type != ProfileSustained && s.Profile.Type != ProfileRampUp {
-		errs = append(errs, fmt.Errorf("profile.type %q is not supported (want %q or %q)", s.Profile.Type, ProfileSustained, ProfileRampUp))
-	}
-	if s.Profile.Concurrency <= 0 {
-		errs = append(errs, fmt.Errorf("profile.concurrency must be a positive integer, got %d", s.Profile.Concurrency))
-	}
-	if time.Duration(s.Profile.Duration) <= 0 {
-		errs = append(errs, errors.New("profile.duration must be a positive duration"))
-	}
-	if time.Duration(s.Profile.Warmup) < 0 {
-		errs = append(errs, errors.New("profile.warmup must not be negative"))
+	switch s.Profile.Type {
+	case ProfileSustained, ProfileRampUp:
+		if s.Profile.Concurrency <= 0 {
+			errs = append(errs, fmt.Errorf("profile.concurrency must be a positive integer, got %d", s.Profile.Concurrency))
+		}
+		if time.Duration(s.Profile.Duration) <= 0 {
+			errs = append(errs, errors.New("profile.duration must be a positive duration"))
+		}
+		if time.Duration(s.Profile.Warmup) < 0 {
+			errs = append(errs, errors.New("profile.warmup must not be negative"))
+		}
+	case ProfileSpike:
+		if s.Profile.BaselineConcurrency <= 0 {
+			errs = append(errs, fmt.Errorf("profile.baseline_concurrency must be a positive integer, got %d", s.Profile.BaselineConcurrency))
+		}
+		if time.Duration(s.Profile.BaselineDuration) <= 0 {
+			errs = append(errs, errors.New("profile.baseline_duration must be a positive duration"))
+		}
+		if s.Profile.Concurrency <= 0 {
+			errs = append(errs, errors.New("profile.concurrency (the spike peak) must be a positive integer"))
+		}
+		if time.Duration(s.Profile.Duration) <= 0 {
+			errs = append(errs, errors.New("profile.duration (the spike length) must be a positive duration"))
+		}
+	default:
+		errs = append(errs, fmt.Errorf("profile.type %q is not supported (want %q, %q or %q)", s.Profile.Type, ProfileSustained, ProfileRampUp, ProfileSpike))
 	}
 	if s.SLOs.Empty() {
 		errs = append(errs, errors.New("at least one SLO is required; a run with no SLO is a misconfiguration, not a benchmark (ADR-0001)"))
