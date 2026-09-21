@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/JonasBorgesLM/sapper/internal/adapters/config"
 	"github.com/JonasBorgesLM/sapper/internal/adapters/httpclient"
+	"github.com/JonasBorgesLM/sapper/internal/adapters/openapi"
 	"github.com/JonasBorgesLM/sapper/internal/core/assert"
 	"github.com/JonasBorgesLM/sapper/internal/core/blastguard"
 	"github.com/JonasBorgesLM/sapper/internal/core/generator"
@@ -84,8 +86,29 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 	go blastguard.WatchContext(ctx, guard, "shutdown signal received")
 
 	client := httpclient.New(guard, nil)
+
+	method := http.MethodGet
+	if sc.Request.Method != "" {
+		method = strings.ToUpper(sc.Request.Method)
+	}
+	path := "/"
+	if sc.Request.Path != "" {
+		path = sc.Request.Path
+	}
+	// When a spec is configured, the scenario's target must exist in it — the
+	// import resolves/validates targets against the contract (IR-01).
+	if cfg.Target.OpenAPISpec != "" {
+		eps, err := openapi.Load(cfg.Target.OpenAPISpec)
+		if err != nil {
+			return model.Result{}, err
+		}
+		if !openapi.Has(eps, method, path) {
+			return model.Result{}, fmt.Errorf("run: %s %s is not declared in the OpenAPI spec %s", method, path, cfg.Target.OpenAPISpec)
+		}
+	}
+	targetURL := strings.TrimSuffix(cfg.Target.BaseURL, "/") + path
 	newReq := func(rctx context.Context) (*http.Request, error) {
-		return http.NewRequestWithContext(rctx, http.MethodGet, cfg.Target.BaseURL, nil)
+		return http.NewRequestWithContext(rctx, method, targetURL, nil)
 	}
 	limits := blastguard.AutoAbortLimits{
 		ErrorRateOver: cfg.BlastRadius.AutoAbort.ErrorRateOver,

@@ -29,7 +29,15 @@ const (
 type Scenario struct {
 	Name    string  `yaml:"name"`
 	Profile Profile `yaml:"profile"`
+	Request Request `yaml:"request"`
 	SLOs    SLOs    `yaml:"slos"`
+}
+
+// Request is the endpoint load is aimed at. Optional; an unset Request means
+// GET / against the target's base URL.
+type Request struct {
+	Method string `yaml:"method"`
+	Path   string `yaml:"path"`
 }
 
 // Profile is the load shape and its parameters.

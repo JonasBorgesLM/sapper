@@ -40,6 +40,9 @@ type Config struct {
 type Target struct {
 	BaseURL string     `yaml:"base_url"`
 	Tier    model.Tier `yaml:"tier"`
+	// OpenAPISpec, when set, is a spec the scenario's request is validated
+	// against before any load is generated (IR-01, ADR-0008). Optional.
+	OpenAPISpec string `yaml:"openapi_spec"`
 }
 
 // BlastRadius holds BlastGuard's mandatory ceilings and the auto-abort limits.
