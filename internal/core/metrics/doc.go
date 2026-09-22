@@ -1,4 +1,3 @@
-// Package metrics collects the latency histogram, per-status counts and error rate, and aggregates N runs with warm-up discarded.
-//
-// See docs/architecture.md. Pre-implementation: this package has no bodies yet.
+// Package metrics collects each request's latency, status and transport error
+// during a run, and aggregates repeated runs into percentiles and their spread.
 package metrics
