@@ -81,6 +81,16 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 		return model.Result{}, err
 	}
 
+	// The profile must pace itself within the concurrency cap; above it, the
+	// guard would reject the surplus and the workers would busy-loop (M3).
+	maxc := cfg.Caps().MaxConcurrency
+	if sc.Profile.Concurrency > maxc {
+		return model.Result{}, fmt.Errorf("run: profile.concurrency %d exceeds blast_radius.max_concurrency %d", sc.Profile.Concurrency, maxc)
+	}
+	if sc.Profile.BaselineConcurrency > maxc {
+		return model.Result{}, fmt.Errorf("run: profile.baseline_concurrency %d exceeds blast_radius.max_concurrency %d", sc.Profile.BaselineConcurrency, maxc)
+	}
+
 	// The kill switch: cancelling ctx (SIGINT/SIGTERM, wired in main) halts the
 	// guard, which stops new load while in-flight requests drain (SR-04).
 	go blastguard.WatchContext(ctx, guard, "shutdown signal received")

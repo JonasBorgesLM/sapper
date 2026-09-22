@@ -87,3 +87,21 @@ func TestExecuteRunAbortedRunIsNotGreen(t *testing.T) {
 		t.Errorf("aborted run reported a green verdict (H1); results = %+v", res.Verdict.Results)
 	}
 }
+
+// M3: a profile concurrency above the blast-radius cap is a misconfiguration
+// (it would make surplus workers busy-loop on ErrConcurrencyExceeded).
+func TestExecuteRunRejectsConcurrencyOverCap(t *testing.T) {
+	cfg := &config.Config{
+		SchemaVersion: 1,
+		Target:        config.Target{BaseURL: "http://127.0.0.1:9", Tier: model.TierLab},
+		BlastRadius:   config.BlastRadius{MaxConcurrency: 5, MaxDuration: config.Duration(time.Minute)},
+	}
+	sc := &scenario.Scenario{
+		Name:    "over",
+		Profile: scenario.Profile{Type: "sustained", Concurrency: 50, Duration: scenario.Duration(50 * time.Millisecond)},
+		SLOs:    scenario.SLOs{P99Under: dur(time.Second)},
+	}
+	if _, err := executeRun(context.Background(), cfg, sc, 1, nil); err == nil {
+		t.Fatal("executeRun ran with concurrency 50 over a cap of 5 (M3)")
+	}
+}
