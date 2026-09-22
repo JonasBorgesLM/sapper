@@ -1,0 +1,13 @@
+# Case 1: constant load, assert the p99 stays under budget.
+name: sustained-baseline
+profile:
+  type: sustained
+  concurrency: 20
+  duration: 30s
+  warmup: 5s          # warm-up samples are discarded from the reported stats
+request:
+  method: GET
+  path: /
+slos:
+  p99_under: 200ms
+  error_rate_under: 0.01

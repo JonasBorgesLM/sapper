@@ -1,0 +1,11 @@
+# Case 2: ramp load until the rate limiter engages; assert its 429 appears.
+name: ramp-to-limit
+profile:
+  type: ramp-up
+  concurrency: 100     # peak concurrency reached at the end of the ramp
+  duration: 30s
+request:
+  method: GET
+  path: /
+slos:
+  status_seen: 429

@@ -62,6 +62,40 @@ sapper assert --in result.json     # green/red against the scenario's SLOs (CI-g
 sapper report --in result.json     # HTML: percentiles, variance, timeline
 ```
 
+## Getting started
+
+```bash
+go build -o sapper ./cmd/sapper
+```
+
+Copy the example config, point it at **your own** lab/staging target (the tier
+gate refuses anything else), and pick a scenario:
+
+```bash
+cp configs/sapper.example.yaml config.yaml   # edit target.base_url + tier
+sapper run    --config config.yaml --scenario scenarios/sustained.yaml --out result.json
+sapper assert --in result.json                # exits non-zero if any SLO is red
+sapper report --in result.json --out report.html
+```
+
+`run` prints a summary and writes `result.json`; `assert` is the CI gate; `report`
+renders a self-contained HTML page. A run against an untiered target, with a
+missing blast-radius cap, or with no SLO declared is refused before any load.
+
+The shipped [`scenarios/`](scenarios/) cover each load shape:
+
+| Scenario | Profile | Asserts |
+| --- | --- | --- |
+| [`sustained.yaml`](scenarios/sustained.yaml) | constant load | `p99_under`, `error_rate_under` |
+| [`ramp-up.yaml`](scenarios/ramp-up.yaml) | rising to a peak | `status_seen` (the limiter's 429) |
+| [`spike.yaml`](scenarios/spike.yaml) | baseline → peak → baseline | `recovery_within` (p99 returns to baseline) |
+| [`soak.yaml`](scenarios/soak.yaml) | long, windowed | `degradation_under` (no slow drift) |
+
+The safety config is separate from the scenario, so one config guards many
+scenarios — see [`configs/sapper.example.yaml`](configs/sapper.example.yaml) for
+the full contract (tier, mandatory caps, auto-abort, optional auth and OpenAPI
+spec).
+
 ## Where it fits in the portfolio
 
 Sapper is the natural test harness for the defenses already built:

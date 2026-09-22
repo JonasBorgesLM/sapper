@@ -1,0 +1,12 @@
+# Case 5: moderate load over a long run; assert it does not slowly degrade.
+name: soak-stability
+profile:
+  type: soak
+  concurrency: 10
+  duration: 30m
+  windows: 30          # split into windows to compare first vs last
+request:
+  method: GET
+  path: /
+slos:
+  degradation_under: 1.5   # last-window p99 <= first-window p99 x 1.5
