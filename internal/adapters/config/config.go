@@ -43,6 +43,11 @@ type Target struct {
 	// OpenAPISpec, when set, is a spec the scenario's request is validated
 	// against before any load is generated (IR-01, ADR-0008). Optional.
 	OpenAPISpec string `yaml:"openapi_spec"`
+	// MetricsURL/MetricsField, when set, sample a numeric field from a JSON
+	// metrics endpoint the target exposes (e.g. expvar's memstats.Alloc), once
+	// per window, to correlate a target-side value with the load. Out-of-band.
+	MetricsURL   string `yaml:"metrics_url"`
+	MetricsField string `yaml:"metrics_field"`
 }
 
 // BlastRadius holds BlastGuard's mandatory ceilings and the auto-abort limits.

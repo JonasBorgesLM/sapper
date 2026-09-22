@@ -38,6 +38,18 @@ type Result struct {
 	// (e.g. a rate limiter's 429) and latency shifts occurred, and drives the
 	// knee metric in the report.
 	Timeline []metrics.WindowStat `json:"timeline,omitempty"`
+
+	// ResourceSamples is an optional out-of-band timeseries of a target-exposed
+	// numeric metric (memory, goroutines, ...), sampled once per window, to
+	// correlate a target-side value with the load (present when a metrics
+	// endpoint is configured).
+	ResourceSamples []ResourceSample `json:"resource_samples,omitempty"`
+}
+
+// ResourceSample is one out-of-band reading of a target metric.
+type ResourceSample struct {
+	Elapsed time.Duration `json:"elapsed"`
+	Value   float64       `json:"value"`
 }
 
 // TargetEcho records what was targeted and under which ceilings, so a result is
