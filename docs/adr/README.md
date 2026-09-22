@@ -18,12 +18,14 @@ New records start from [`TEMPLATE.md`](TEMPLATE.md).
 | [`0005`](0005-warden-sapper-naming.md) | Warden inspects, Sapper mines; scanner renamed to Warden | Accepted | — |
 | [`0006`](0006-reuse-from-warden.md) | Reuse Warden's config style, OpenAPI import, and JSON pipeline | Accepted | — |
 | [`0007`](0007-fault-injection-approach.md) | Build a minimal in-process fault proxy, not integrate toxiproxy | Accepted | — |
+| [`0008`](0008-minimal-openapi-parser.md) | Parse OpenAPI minimally with the YAML library, not kin-openapi | Accepted | — |
 
 ## Reopening criteria on the record
 
 | ADR | Reopen when |
 | --- | --- |
 | `0007` | A scenario needs a fault type the minimal proxy cannot express (bandwidth, slicer, partial writes) — integrate toxiproxy then |
+| `0008` | A scenario needs request bodies generated from schemas, or a spec using `$ref` indirection — adopt kin-openapi then |
 | `0003` | A metrics histogram dependency is chosen — record it in its own ADR |
 
 ## Open questions

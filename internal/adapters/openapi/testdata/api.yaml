@@ -1,0 +1,14 @@
+openapi: 3.0.3
+info:
+  title: test
+  version: "1"
+paths:
+  /users:
+    get:
+      summary: list
+    post:
+      summary: create
+  /users/{id}:
+    parameters: []
+    get:
+      summary: show

@@ -1,0 +1,8 @@
+openapi: 3.0.3
+info:
+  title: ping-api
+  version: "1"
+paths:
+  /ping:
+    get:
+      summary: health check
