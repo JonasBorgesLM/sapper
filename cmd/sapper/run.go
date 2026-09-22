@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -297,9 +298,22 @@ func verdictExitCode(v model.Verdict) int {
 // non-interactive context (CI) the read fails and it declines, so production is
 // refused there (SR-02).
 func interactiveConfirm() (bool, error) {
+	fi, err := os.Stdin.Stat()
+	isTTY := err == nil && fi.Mode()&os.ModeCharDevice != 0
+	return confirmProduction(os.Stdin, isTTY)
+}
+
+// confirmProduction gates the production tier on an interactive "yes". When
+// stdin is not a terminal (CI, a pipe, a redirect) it refuses regardless of the
+// input, so `echo yes | sapper run` cannot clear the gate — production needs a
+// human at a terminal (SR-02, audit M2).
+func confirmProduction(r io.Reader, isTTY bool) (bool, error) {
+	if !isTTY {
+		return false, nil
+	}
 	fmt.Fprint(os.Stderr, "About to generate load against a PRODUCTION target. Type 'yes' to continue: ")
 	var resp string
-	if _, err := fmt.Fscanln(os.Stdin, &resp); err != nil {
+	if _, err := fmt.Fscanln(r, &resp); err != nil {
 		return false, nil
 	}
 	return resp == "yes", nil
