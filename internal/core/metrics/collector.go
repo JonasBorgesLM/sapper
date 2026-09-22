@@ -70,6 +70,12 @@ type Snapshot struct {
 
 // LatencyStats summarises the recorded latencies. Percentiles use the
 // nearest-rank method on the sorted samples.
+//
+// The latencies cover every request, including those that failed at the
+// transport level: a timeout contributes its full wait, but a refused
+// connection contributes a near-zero time that pulls the percentiles down. So
+// these describe time-to-outcome, not time-to-success — read them alongside the
+// error rate, which is why the two are reported together.
 type LatencyStats struct {
 	Count int           `json:"count"`
 	Min   time.Duration `json:"min"`
