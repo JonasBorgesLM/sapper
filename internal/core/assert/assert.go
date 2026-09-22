@@ -82,3 +82,20 @@ func Degradation(first, last metrics.Snapshot, factor float64) model.SLOResult {
 		Detail: fmt.Sprintf("final-window p99 %s vs first-window %s × %.2f = %s", last.Latency.P99, first.Latency.P99, factor, threshold),
 	}
 }
+
+// WithAbort folds a run's aborted state into its verdict: a run halted by the
+// kill switch, an auto-abort, or the duration cap did not complete, so its SLOs
+// were evaluated on partial data and the verdict must not be green (H1). A
+// completed run is returned unchanged.
+func WithAbort(v model.Verdict, aborted bool, reason string) model.Verdict {
+	if !aborted {
+		return v
+	}
+	v.Passed = false
+	v.Results = append(v.Results, model.SLOResult{
+		Name:   "run_completed",
+		Passed: false,
+		Detail: "run aborted before completion: " + reason,
+	})
+	return v
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -81,6 +82,22 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 		return model.Result{}, err
 	}
 
+	// The profile must pace itself within the concurrency cap; above it, the
+	// guard would reject the surplus and the workers would busy-loop (M3).
+	maxc := cfg.Caps().MaxConcurrency
+	if sc.Profile.Concurrency > maxc {
+		return model.Result{}, fmt.Errorf("run: profile.concurrency %d exceeds blast_radius.max_concurrency %d", sc.Profile.Concurrency, maxc)
+	}
+	if sc.Profile.BaselineConcurrency > maxc {
+		return model.Result{}, fmt.Errorf("run: profile.baseline_concurrency %d exceeds blast_radius.max_concurrency %d", sc.Profile.BaselineConcurrency, maxc)
+	}
+
+	// Derive a cancellable context so the kill-switch watcher below is torn down
+	// when the run returns; otherwise it blocks on the parent context forever
+	// (a goroutine leak for any caller whose context outlives the run) (M4).
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	// The kill switch: cancelling ctx (SIGINT/SIGTERM, wired in main) halts the
 	// guard, which stops new load while in-flight requests drain (SR-04).
 	go blastguard.WatchContext(ctx, guard, "shutdown signal received")
@@ -142,6 +159,7 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 	}
 
 	agg := metrics.Aggregate(snaps)
+	verdict := assert.WithAbort(assert.Evaluate(agg, sc.SLOs), guard.Stopped(), guard.Reason())
 	return model.Result{
 		Target:      cfg.TargetEcho(),
 		Scenario:    sc.Name,
@@ -151,7 +169,7 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 		Aborted:     guard.Stopped(),
 		AbortReason: guard.Reason(),
 		Metrics:     agg,
-		Verdict:     assert.Evaluate(agg, sc.SLOs),
+		Verdict:     verdict,
 	}, nil
 }
 
@@ -177,6 +195,7 @@ func executeSpike(ctx context.Context, cfg *config.Config, sc *scenario.Scenario
 			verdict.Passed = false
 		}
 	}
+	verdict = assert.WithAbort(verdict, guard.Stopped(), guard.Reason())
 
 	return model.Result{
 		Target:      cfg.TargetEcho(),
@@ -234,6 +253,7 @@ func executeSoak(ctx context.Context, cfg *config.Config, sc *scenario.Scenario,
 			verdict.Passed = false
 		}
 	}
+	verdict = assert.WithAbort(verdict, guard.Stopped(), guard.Reason())
 
 	return model.Result{
 		Target:      cfg.TargetEcho(),
@@ -266,21 +286,26 @@ func runProfile(ctx context.Context, sc *scenario.Scenario, client *httpclient.C
 	}
 }
 
-// verdictExitCode maps a verdict to a process exit code so CI can gate on it.
-func verdictExitCode(v model.Verdict) int {
-	if v.Passed {
-		return 0
-	}
-	return 1
-}
-
 // interactiveConfirm prompts on stderr and reads a yes/no from stdin. In a
 // non-interactive context (CI) the read fails and it declines, so production is
 // refused there (SR-02).
 func interactiveConfirm() (bool, error) {
+	fi, err := os.Stdin.Stat()
+	isTTY := err == nil && fi.Mode()&os.ModeCharDevice != 0
+	return confirmProduction(os.Stdin, isTTY)
+}
+
+// confirmProduction gates the production tier on an interactive "yes". When
+// stdin is not a terminal (CI, a pipe, a redirect) it refuses regardless of the
+// input, so `echo yes | sapper run` cannot clear the gate — production needs a
+// human at a terminal (SR-02, audit M2).
+func confirmProduction(r io.Reader, isTTY bool) (bool, error) {
+	if !isTTY {
+		return false, nil
+	}
 	fmt.Fprint(os.Stderr, "About to generate load against a PRODUCTION target. Type 'yes' to continue: ")
 	var resp string
-	if _, err := fmt.Fscanln(os.Stdin, &resp); err != nil {
+	if _, err := fmt.Fscanln(r, &resp); err != nil {
 		return false, nil
 	}
 	return resp == "yes", nil

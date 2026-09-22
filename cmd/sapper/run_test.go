@@ -49,11 +49,50 @@ func TestExecuteRunEndToEnd(t *testing.T) {
 	}
 }
 
-func TestVerdictExitCode(t *testing.T) {
-	if got := verdictExitCode(model.Verdict{Passed: true}); got != 0 {
-		t.Errorf("exit for passing verdict = %d, want 0", got)
+// H1: a run halted by a cap/kill/auto-abort must not report a green verdict.
+func TestExecuteRunAbortedRunIsNotGreen(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		SchemaVersion: 1,
+		Target:        config.Target{BaseURL: srv.URL, Tier: model.TierLab},
+		// A 1ms duration cap trips almost immediately, aborting the run.
+		BlastRadius: config.BlastRadius{MaxConcurrency: 5, MaxDuration: config.Duration(time.Millisecond)},
 	}
-	if got := verdictExitCode(model.Verdict{Passed: false}); got == 0 {
-		t.Errorf("exit for failing verdict = 0, want non-zero (CI gate)")
+	sc := &scenario.Scenario{
+		Name:    "aborts",
+		Profile: scenario.Profile{Type: "sustained", Concurrency: 2, Duration: scenario.Duration(200 * time.Millisecond)},
+		SLOs:    scenario.SLOs{P99Under: dur(5 * time.Second)},
+	}
+	res, err := executeRun(context.Background(), cfg, sc, 1, nil)
+	if err != nil {
+		t.Fatalf("executeRun() error = %v", err)
+	}
+	if !res.Aborted {
+		t.Fatalf("expected the run to abort on the duration cap; reason=%q", res.AbortReason)
+	}
+	if res.Verdict.Passed {
+		t.Errorf("aborted run reported a green verdict (H1); results = %+v", res.Verdict.Results)
+	}
+}
+
+// M3: a profile concurrency above the blast-radius cap is a misconfiguration
+// (it would make surplus workers busy-loop on ErrConcurrencyExceeded).
+func TestExecuteRunRejectsConcurrencyOverCap(t *testing.T) {
+	cfg := &config.Config{
+		SchemaVersion: 1,
+		Target:        config.Target{BaseURL: "http://127.0.0.1:9", Tier: model.TierLab},
+		BlastRadius:   config.BlastRadius{MaxConcurrency: 5, MaxDuration: config.Duration(time.Minute)},
+	}
+	sc := &scenario.Scenario{
+		Name:    "over",
+		Profile: scenario.Profile{Type: "sustained", Concurrency: 50, Duration: scenario.Duration(50 * time.Millisecond)},
+		SLOs:    scenario.SLOs{P99Under: dur(time.Second)},
+	}
+	if _, err := executeRun(context.Background(), cfg, sc, 1, nil); err == nil {
+		t.Fatal("executeRun ran with concurrency 50 over a cap of 5 (M3)")
 	}
 }
