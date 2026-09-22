@@ -142,12 +142,20 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 	if runs < 1 {
 		runs = 1
 	}
+	// Window the run into ~20 buckets so the result carries a timeline (when
+	// 429s began, when latency shifted) and the knee can be computed.
+	windowSize := time.Duration(sc.Profile.Duration) / 20
+	if windowSize < 100*time.Millisecond {
+		windowSize = 100 * time.Millisecond
+	}
+
 	snaps := make([]metrics.Snapshot, 0, runs)
+	var timeline []metrics.WindowStat
 	for i := 0; i < runs; i++ {
 		if guard.Stopped() {
 			break // a catastrophic abort or kill switch halts every remaining run
 		}
-		coll := metrics.New()
+		coll := metrics.New(metrics.WithWindows(time.Now, windowSize))
 		runCtx, cancelRun := context.WithCancel(ctx)
 		go blastguard.WatchAutoAbort(runCtx, guard, func() (float64, time.Duration) {
 			s := coll.Snapshot()
@@ -155,7 +163,11 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 		}, limits, time.Second)
 		runProfile(runCtx, sc, client, coll, newReq)
 		cancelRun()
-		snaps = append(snaps, coll.Snapshot())
+		snap := coll.Snapshot()
+		if i == 0 {
+			timeline = snap.Windows // the first repetition's timeline is representative
+		}
+		snaps = append(snaps, snap)
 	}
 
 	agg := metrics.Aggregate(snaps)
@@ -170,6 +182,7 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 		AbortReason: guard.Reason(),
 		Metrics:     agg,
 		Verdict:     verdict,
+		Timeline:    timeline,
 	}, nil
 }
 
@@ -311,10 +324,24 @@ func confirmProduction(r io.Reader, isTTY bool) (bool, error) {
 	return resp == "yes", nil
 }
 
+// timelineWindowSize recovers the window size from a timeline (the gap between
+// two windows' starts), or 0 when there are fewer than two windows.
+func timelineWindowSize(tl []metrics.WindowStat) time.Duration {
+	if len(tl) < 2 {
+		return 0
+	}
+	return tl[1].Start - tl[0].Start
+}
+
 func printRunSummary(r model.Result, out string) {
 	fmt.Printf("run %q (%s) → %s\n", r.Scenario, r.Profile, out)
 	fmt.Printf("  p99 mean %s (±%s over %d runs), error rate %.4f\n",
 		r.Metrics.P99.Mean, r.Metrics.P99.StdDev, r.Metrics.Runs, r.Metrics.ErrorRate.Mean)
+	if ws := timelineWindowSize(r.Timeline); ws > 0 {
+		if rps, at, ok := metrics.Knee(r.Timeline, ws, http.StatusTooManyRequests); ok {
+			fmt.Printf("  429 first seen at ~%.0f req/s (%s into the run) — the rate limiter's knee\n", rps, at)
+		}
+	}
 	if r.Aborted {
 		fmt.Printf("  ABORTED: %s\n", r.AbortReason)
 	}

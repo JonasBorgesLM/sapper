@@ -24,11 +24,44 @@ type Collector struct {
 	statusCounts map[int]int
 	errors       int
 	total        int
+
+	// Windowing (optional): when a clock and window size are configured, each
+	// record is also tallied into a per-time-window bucket, so a run can show a
+	// timeline (when 429s began, when latency shifted) rather than only an
+	// aggregate.
+	now        func() time.Time
+	windowSize time.Duration
+	start      time.Time
+	windows    []windowTally
 }
 
-// New returns an empty Collector.
-func New() *Collector {
-	return &Collector{statusCounts: make(map[int]int)}
+type windowTally struct {
+	total, errors int
+	statusCounts  map[int]int
+}
+
+// Option configures a Collector at construction.
+type Option func(*Collector)
+
+// WithWindows tallies each record into a per-window bucket of the given size,
+// timed by now, so Snapshot carries a timeline. now defaults off (no windowing).
+func WithWindows(now func() time.Time, size time.Duration) Option {
+	return func(c *Collector) {
+		c.now = now
+		c.windowSize = size
+	}
+}
+
+// New returns an empty Collector. With WithWindows it also records a timeline.
+func New(opts ...Option) *Collector {
+	c := &Collector{statusCounts: make(map[int]int)}
+	for _, opt := range opts {
+		opt(c)
+	}
+	if c.now != nil {
+		c.start = c.now()
+	}
+	return c
 }
 
 // Reset discards everything recorded so far. The generator calls it when the
@@ -41,6 +74,10 @@ func (c *Collector) Reset() {
 	c.statusCounts = make(map[int]int)
 	c.errors = 0
 	c.total = 0
+	c.windows = nil
+	if c.now != nil {
+		c.start = c.now()
+	}
 }
 
 // Record logs one request. latency is the time to its outcome. A non-nil err is
@@ -52,11 +89,34 @@ func (c *Collector) Record(latency time.Duration, status int, err error) {
 	defer c.mu.Unlock()
 	c.total++
 	c.latencies = append(c.latencies, latency)
-	if err != nil {
+	failed := err != nil
+	if failed {
 		c.errors++
+	} else {
+		c.statusCounts[status]++
+	}
+	c.recordWindow(status, failed)
+}
+
+// recordWindow tallies one record into its time bucket. Caller holds c.mu.
+func (c *Collector) recordWindow(status int, failed bool) {
+	if c.now == nil {
 		return
 	}
-	c.statusCounts[status]++
+	idx := int(c.now().Sub(c.start) / c.windowSize)
+	if idx < 0 {
+		idx = 0
+	}
+	for len(c.windows) <= idx {
+		c.windows = append(c.windows, windowTally{statusCounts: make(map[int]int)})
+	}
+	w := &c.windows[idx]
+	w.total++
+	if failed {
+		w.errors++
+	} else {
+		w.statusCounts[status]++
+	}
 }
 
 // Snapshot is the aggregated view of everything recorded so far.
@@ -66,6 +126,19 @@ type Snapshot struct {
 	ErrorRate    float64      `json:"error_rate"`
 	StatusCounts map[int]int  `json:"status_counts"`
 	Latency      LatencyStats `json:"latency"`
+	// Windows is the per-time-window timeline, present only when the collector
+	// was built WithWindows.
+	Windows []WindowStat `json:"windows,omitempty"`
+}
+
+// WindowStat is one time window's tally: its start offset from the run start,
+// how many requests fell in it, how many failed at the transport level, and the
+// per-status breakdown.
+type WindowStat struct {
+	Start        time.Duration `json:"start"`
+	Total        int           `json:"total"`
+	Errors       int           `json:"errors"`
+	StatusCounts map[int]int   `json:"status_counts"`
 }
 
 // LatencyStats summarises the recorded latencies. Percentiles use the
@@ -108,6 +181,15 @@ func (c *Collector) Snapshot() Snapshot {
 	sorted := slices.Clone(c.latencies)
 	slices.Sort(sorted)
 	s.Latency = latencyStats(sorted)
+
+	for i, w := range c.windows {
+		s.Windows = append(s.Windows, WindowStat{
+			Start:        time.Duration(i) * c.windowSize,
+			Total:        w.total,
+			Errors:       w.errors,
+			StatusCounts: maps.Clone(w.statusCounts),
+		})
+	}
 	return s
 }
 

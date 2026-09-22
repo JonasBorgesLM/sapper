@@ -54,3 +54,26 @@ func TestAggregateSumsStatusCountsAcrossRuns(t *testing.T) {
 		t.Errorf("StatusCounts = %v, want {200:170, 429:30, 500:1}", agg.StatusCounts)
 	}
 }
+
+func TestKnee(t *testing.T) {
+	// windows of 1s: w0 all 200 (100 req), w1 all 200 (100), w2 429 appears.
+	windows := []WindowStat{
+		{Start: 0, Total: 100, StatusCounts: map[int]int{200: 100}},
+		{Start: time.Second, Total: 100, StatusCounts: map[int]int{200: 100}},
+		{Start: 2 * time.Second, Total: 50, StatusCounts: map[int]int{429: 50}},
+	}
+	rps, at, ok := Knee(windows, time.Second, 429)
+	if !ok {
+		t.Fatal("Knee not found though 429 appears")
+	}
+	// cumulative 250 requests by end of window 2 (3s) => ~83.3 rps
+	if rps < 80 || rps > 87 {
+		t.Errorf("knee rps = %.1f, want ~83", rps)
+	}
+	if at != 3*time.Second {
+		t.Errorf("knee at = %s, want 3s", at)
+	}
+	if _, _, ok := Knee(windows, time.Second, 503); ok {
+		t.Error("Knee found a status that never appears")
+	}
+}

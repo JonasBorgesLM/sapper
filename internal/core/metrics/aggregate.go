@@ -104,3 +104,22 @@ func rateStatOf(xs []float64) RateStat {
 	m, lo, hi, sd := stats(xs)
 	return RateStat{Mean: m, Min: lo, Max: hi, StdDev: sd}
 }
+
+// Knee returns the request rate (req/s) at which a status first appears in the
+// timeline — the point where, e.g., a rate limiter's 429 begins. rps is the
+// cumulative throughput up to the end of that window; at is the elapsed time to
+// it. ok is false if the status never appears or there are no windows.
+func Knee(windows []WindowStat, windowSize time.Duration, status int) (rps float64, at time.Duration, ok bool) {
+	cumulative := 0
+	for _, w := range windows {
+		cumulative += w.Total
+		if w.StatusCounts[status] > 0 {
+			end := w.Start + windowSize
+			if end <= 0 {
+				return 0, 0, false
+			}
+			return float64(cumulative) / end.Seconds(), end, true
+		}
+	}
+	return 0, 0, false
+}

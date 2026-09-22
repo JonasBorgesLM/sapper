@@ -2,24 +2,42 @@
 // are escaped by html/template and there are no external resources (no scripts,
 // fonts or stylesheets fetched), so the report opens offline (FR-05).
 //
-// It shows the target, the SLO verdict, and the N-run latency aggregate
-// (percentiles with mean/min/max/stddev) plus the error rate. A per-window
-// timeline is a future enhancement: it needs the collector to bucket samples by
-// time, which v1 does not do — so the report does not fake one.
+// It shows the target, the SLO verdict, the N-run latency aggregate (percentiles
+// with mean/min/max/stddev), the error rate, and — for windowed profiles
+// (ramp-up, sustained) — a per-window timeline with the rate-limiter knee.
 package report
 
 import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"net/http"
+	"time"
 
+	"github.com/JonasBorgesLM/sapper/internal/core/metrics"
 	"github.com/JonasBorgesLM/sapper/internal/core/model"
 )
 
+// view augments the result with the values the template cannot compute itself.
+type view struct {
+	model.Result
+	WindowSize time.Duration
+	HasKnee    bool
+	KneeRPS    float64
+	KneeAt     time.Duration
+}
+
 // Render produces the self-contained HTML for a result.
 func Render(r model.Result) (string, error) {
+	v := view{Result: r}
+	if len(r.Timeline) >= 2 {
+		v.WindowSize = r.Timeline[1].Start - r.Timeline[0].Start
+		if rps, at, ok := metrics.Knee(r.Timeline, v.WindowSize, http.StatusTooManyRequests); ok {
+			v.HasKnee, v.KneeRPS, v.KneeAt = true, rps, at
+		}
+	}
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, r); err != nil {
+	if err := tmpl.Execute(&buf, v); err != nil {
 		return "", fmt.Errorf("report: rendering: %w", err)
 	}
 	return buf.String(), nil
@@ -75,7 +93,17 @@ var tmpl = template.Must(template.New("report").Parse(`<!doctype html>
 <h2>Errors</h2>
 <p>transport error rate: mean {{printf "%.4f" .Metrics.ErrorRate.Mean}} (max {{printf "%.4f" .Metrics.ErrorRate.Max}} across runs)</p>
 
-<footer>Sapper — sustained adversarial load, asserted against declared SLOs. A per-window timeline is a future enhancement; this report shows the N-run aggregate.</footer>
+{{if .Timeline}}
+<h2>Timeline — windows of {{.WindowSize}} (first run)</h2>
+{{if .HasKnee}}<p><strong>Rate limiter's knee:</strong> 429 first seen at ~{{printf "%.0f" .KneeRPS}} req/s ({{.KneeAt}} into the run).</p>{{end}}
+<table>
+  <tr><th>t</th><th>total</th><th>errors</th><th>statuses</th></tr>
+  {{range .Timeline}}<tr><td>{{.Start}}</td><td>{{.Total}}</td><td>{{.Errors}}</td><td>{{range $code, $n := .StatusCounts}}{{$code}}:{{$n}} {{end}}</td></tr>
+  {{end}}
+</table>
+{{end}}
+
+<footer>Sapper — sustained adversarial load, asserted against declared SLOs.</footer>
 </body>
 </html>
 `))
