@@ -1,4 +1,4 @@
-package main
+package report
 
 import (
 	"strings"
@@ -22,9 +22,9 @@ func TestRenderReportContainsKeyFacts(t *testing.T) {
 		Verdict: model.Verdict{Passed: true, Results: []model.SLOResult{{Name: "p99_under", Passed: true, Detail: "p99 mean 150ms < 200ms"}}},
 	}
 
-	html, err := renderReport(result)
+	html, err := Render(result)
 	if err != nil {
-		t.Fatalf("renderReport() error = %v", err)
+		t.Fatalf("Render() error = %v", err)
 	}
 	for _, want := range []string{"sustained-baseline", "sustained", "150ms", "lab", "PASS", "p99_under", "<html"} {
 		if !strings.Contains(html, want) {
@@ -46,9 +46,9 @@ func TestRenderReportShowsFailAndAbort(t *testing.T) {
 		Metrics: metrics.Aggregation{Runs: 1},
 		Verdict: model.Verdict{Passed: false, Results: []model.SLOResult{{Name: "error_rate_under", Passed: false, Detail: "over"}}},
 	}
-	html, err := renderReport(result)
+	html, err := Render(result)
 	if err != nil {
-		t.Fatalf("renderReport() error = %v", err)
+		t.Fatalf("Render() error = %v", err)
 	}
 	if !strings.Contains(html, "FAIL") || !strings.Contains(html, "auto-abort") {
 		t.Errorf("report should show FAIL and the abort reason")

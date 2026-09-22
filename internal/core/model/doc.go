@@ -1,4 +1,3 @@
-// Package model holds the shared data types (Result, Sample, Verdict, Target, Tier, Caps) and the on-disk result.json shape.
-//
-// See docs/architecture.md. Pre-implementation: this package has no bodies yet.
+// Package model holds the shared data types — Tier, Caps, Result, Verdict and
+// the on-disk result.json shape — that the core packages and the CLI exchange.
 package model
