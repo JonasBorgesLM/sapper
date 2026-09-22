@@ -75,3 +75,24 @@ func TestRenderReportShowsTimelineAndKnee(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderReportShowsResourceSamples(t *testing.T) {
+	result := model.Result{
+		Scenario: "soak", Profile: "sustained",
+		Metrics: metrics.Aggregation{Runs: 1},
+		Verdict: model.Verdict{Passed: true},
+		ResourceSamples: []model.ResourceSample{
+			{Elapsed: time.Second, Value: 1048576},
+			{Elapsed: 2 * time.Second, Value: 2097152},
+		},
+	}
+	html, err := Render(result)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	for _, want := range []string{"Target metric", "1048576", "2097152"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("report missing %q", want)
+		}
+	}
+}

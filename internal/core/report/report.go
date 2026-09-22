@@ -103,6 +103,15 @@ var tmpl = template.Must(template.New("report").Parse(`<!doctype html>
 </table>
 {{end}}
 
+{{if .ResourceSamples}}
+<h2>Target metric over time (out-of-band)</h2>
+<table>
+  <tr><th>t</th><th>value</th></tr>
+  {{range .ResourceSamples}}<tr><td>{{.Elapsed}}</td><td>{{printf "%.0f" .Value}}</td></tr>
+  {{end}}
+</table>
+{{end}}
+
 <footer>Sapper — sustained adversarial load, asserted against declared SLOs.</footer>
 </body>
 </html>

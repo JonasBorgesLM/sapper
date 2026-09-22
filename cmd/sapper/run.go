@@ -9,11 +9,13 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/JonasBorgesLM/sapper/internal/adapters/config"
 	"github.com/JonasBorgesLM/sapper/internal/adapters/httpclient"
 	"github.com/JonasBorgesLM/sapper/internal/adapters/openapi"
+	"github.com/JonasBorgesLM/sapper/internal/adapters/probe"
 	"github.com/JonasBorgesLM/sapper/internal/core/assert"
 	"github.com/JonasBorgesLM/sapper/internal/core/blastguard"
 	"github.com/JonasBorgesLM/sapper/internal/core/generator"
@@ -149,6 +151,31 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 		windowSize = 100 * time.Millisecond
 	}
 
+	// Optional out-of-band resource sampling: once per window, read a numeric
+	// field from the target's metrics endpoint, to correlate a target-side value
+	// with the load. It does not go through the guard (it is monitoring, not
+	// load) and stops when the run's context is cancelled.
+	var resMu sync.Mutex
+	var resourceSamples []model.ResourceSample
+	if cfg.Target.MetricsURL != "" && cfg.Target.MetricsField != "" {
+		go func() {
+			ticker := time.NewTicker(windowSize)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if v, err := probe.Sample(cfg.Target.MetricsURL, cfg.Target.MetricsField); err == nil {
+						resMu.Lock()
+						resourceSamples = append(resourceSamples, model.ResourceSample{Elapsed: time.Since(start), Value: v})
+						resMu.Unlock()
+					}
+				}
+			}
+		}()
+	}
+
 	snaps := make([]metrics.Snapshot, 0, runs)
 	var timeline []metrics.WindowStat
 	for i := 0; i < runs; i++ {
@@ -172,17 +199,24 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 
 	agg := metrics.Aggregate(snaps)
 	verdict := assert.WithAbort(assert.Evaluate(agg, sc.SLOs), guard.Stopped(), guard.Reason())
+	// Copy (not alias) under the lock: the sampler goroutine is still running
+	// until the deferred cancel fires on return, so a header copy could race
+	// with a later append.
+	resMu.Lock()
+	samples := append([]model.ResourceSample(nil), resourceSamples...)
+	resMu.Unlock()
 	return model.Result{
-		Target:      cfg.TargetEcho(),
-		Scenario:    sc.Name,
-		Profile:     sc.Profile.Type,
-		StartedAt:   start,
-		CompletedAt: time.Now(),
-		Aborted:     guard.Stopped(),
-		AbortReason: guard.Reason(),
-		Metrics:     agg,
-		Verdict:     verdict,
-		Timeline:    timeline,
+		Target:          cfg.TargetEcho(),
+		Scenario:        sc.Name,
+		Profile:         sc.Profile.Type,
+		StartedAt:       start,
+		CompletedAt:     time.Now(),
+		Aborted:         guard.Stopped(),
+		AbortReason:     guard.Reason(),
+		Metrics:         agg,
+		Verdict:         verdict,
+		ResourceSamples: samples,
+		Timeline:        timeline,
 	}, nil
 }
 

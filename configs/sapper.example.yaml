@@ -15,6 +15,11 @@ target:
   tier: lab
   # Optional: validate a scenario's request against an OpenAPI spec before load.
   # openapi_spec: ./openapi.yaml
+  # Optional: sample a numeric field from a JSON metrics endpoint the target
+  # exposes (e.g. Go expvar), once per window, to correlate a target-side value
+  # with the load. Out-of-band monitoring, not load.
+  # metrics_url: http://localhost:8080/debug/vars
+  # metrics_field: memstats.Alloc
 
 # REQUIRED. BlastGuard refuses to start without both caps.
 blast_radius:
