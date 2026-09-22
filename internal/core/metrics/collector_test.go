@@ -66,3 +66,36 @@ func TestConcurrentRecordIsRaceFree(t *testing.T) {
 		t.Errorf("Total = %d, want 100", got)
 	}
 }
+
+func TestWindowedRecording(t *testing.T) {
+	now := time.Unix(0, 0)
+	clock := func() time.Time { return now }
+	c := New(WithWindows(clock, 100*ms))
+
+	c.Record(ms, 200, nil) // window 0
+	c.Record(ms, 429, nil) // window 0
+	now = now.Add(150 * ms)
+	c.Record(ms, 429, nil) // window 1
+
+	s := c.Snapshot()
+	if len(s.Windows) != 2 {
+		t.Fatalf("len(Windows) = %d, want 2", len(s.Windows))
+	}
+	if s.Windows[0].Total != 2 || s.Windows[0].StatusCounts[200] != 1 || s.Windows[0].StatusCounts[429] != 1 {
+		t.Errorf("window 0 = %+v", s.Windows[0])
+	}
+	if s.Windows[1].Total != 1 || s.Windows[1].StatusCounts[429] != 1 {
+		t.Errorf("window 1 = %+v", s.Windows[1])
+	}
+	if s.Windows[1].Start != 100*ms {
+		t.Errorf("window 1 Start = %s, want 100ms", s.Windows[1].Start)
+	}
+}
+
+func TestNonWindowedHasNoWindows(t *testing.T) {
+	c := New()
+	c.Record(ms, 200, nil)
+	if w := c.Snapshot().Windows; len(w) != 0 {
+		t.Errorf("Windows = %v, want none when windowing is off", w)
+	}
+}

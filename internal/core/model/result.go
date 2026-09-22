@@ -32,6 +32,12 @@ type Result struct {
 	// collector and the assert stage), and are what `report` and `assert` read.
 	Metrics metrics.Aggregation `json:"metrics"`
 	Verdict Verdict             `json:"verdict"`
+
+	// Timeline is the per-window breakdown of the first repetition, present for
+	// profiles that window their run (ramp-up, sustained). It shows when statuses
+	// (e.g. a rate limiter's 429) and latency shifts occurred, and drives the
+	// knee metric in the report.
+	Timeline []metrics.WindowStat `json:"timeline,omitempty"`
 }
 
 // TargetEcho records what was targeted and under which ceilings, so a result is

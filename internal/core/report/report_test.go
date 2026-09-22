@@ -54,3 +54,24 @@ func TestRenderReportShowsFailAndAbort(t *testing.T) {
 		t.Errorf("report should show FAIL and the abort reason")
 	}
 }
+
+func TestRenderReportShowsTimelineAndKnee(t *testing.T) {
+	result := model.Result{
+		Scenario: "ramp", Profile: "ramp-up",
+		Metrics: metrics.Aggregation{Runs: 1},
+		Verdict: model.Verdict{Passed: true},
+		Timeline: []metrics.WindowStat{
+			{Start: 0, Total: 100, StatusCounts: map[int]int{200: 100}},
+			{Start: time.Second, Total: 120, StatusCounts: map[int]int{200: 20, 429: 100}},
+		},
+	}
+	html, err := Render(result)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	for _, want := range []string{"Timeline", "knee", "429", "req/s"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("report missing %q", want)
+		}
+	}
+}
