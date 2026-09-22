@@ -1,0 +1,35 @@
+# Example Sapper safety config. Copy it, point it at YOUR OWN lab/staging target,
+# and run:
+#
+#   sapper run --config configs/sapper.example.yaml --scenario scenarios/sustained.yaml
+#
+# The environment tier and both blast-radius caps are REQUIRED — there is no
+# safe default. Secrets are written as ${VAR} and read from the environment.
+schema_version: 1
+
+target:
+  base_url: http://localhost:8080
+  # tier gates who Sapper may hit: lab | staging | authorized | production.
+  # 'production' additionally needs a noisy flag and interactive confirmation,
+  # so CI can never reach it.
+  tier: lab
+  # Optional: validate a scenario's request against an OpenAPI spec before load.
+  # openapi_spec: ./openapi.yaml
+
+# REQUIRED. BlastGuard refuses to start without both caps.
+blast_radius:
+  max_concurrency: 50        # hard ceiling on in-flight requests
+  max_duration: 60s          # hard ceiling on wall-clock time
+  # Optional: stop the run early if the target is already falling over.
+  auto_abort:
+    error_rate_over: 0.5     # abort if >50% transport errors in a window
+    p99_over: 2s             # abort if p99 exceeds this in a window
+
+# Optional. Omit entirely for a target that needs no auth. Never commit a real
+# credential — ${VAR} is read from the environment.
+# auth:
+#   login_endpoint: /login
+#   credentials:
+#     username: admin
+#     password: ${LAB_PASSWORD}
+#   token_path: data.access_token

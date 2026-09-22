@@ -1,0 +1,13 @@
+# Case 3: a sudden peak, then assert latency recovers to the baseline.
+name: spike-recovery
+profile:
+  type: spike
+  baseline_concurrency: 5
+  baseline_duration: 10s
+  concurrency: 80      # the spike peak
+  duration: 5s         # the spike length
+request:
+  method: GET
+  path: /
+slos:
+  recovery_within: 1.5   # post-spike p99 <= baseline p99 x 1.5
