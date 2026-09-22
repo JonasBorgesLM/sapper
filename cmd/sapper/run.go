@@ -286,14 +286,6 @@ func runProfile(ctx context.Context, sc *scenario.Scenario, client *httpclient.C
 	}
 }
 
-// verdictExitCode maps a verdict to a process exit code so CI can gate on it.
-func verdictExitCode(v model.Verdict) int {
-	if v.Passed {
-		return 0
-	}
-	return 1
-}
-
 // interactiveConfirm prompts on stderr and reads a yes/no from stdin. In a
 // non-interactive context (CI) the read fails and it declines, so production is
 // refused there (SR-02).

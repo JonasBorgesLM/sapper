@@ -49,15 +49,6 @@ func TestExecuteRunEndToEnd(t *testing.T) {
 	}
 }
 
-func TestVerdictExitCode(t *testing.T) {
-	if got := verdictExitCode(model.Verdict{Passed: true}); got != 0 {
-		t.Errorf("exit for passing verdict = %d, want 0", got)
-	}
-	if got := verdictExitCode(model.Verdict{Passed: false}); got == 0 {
-		t.Errorf("exit for failing verdict = 0, want non-zero (CI gate)")
-	}
-}
-
 // H1: a run halted by a cap/kill/auto-abort must not report a green verdict.
 func TestExecuteRunAbortedRunIsNotGreen(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
