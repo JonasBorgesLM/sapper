@@ -57,3 +57,33 @@ func TestVerdictExitCode(t *testing.T) {
 		t.Errorf("exit for failing verdict = 0, want non-zero (CI gate)")
 	}
 }
+
+// H1: a run halted by a cap/kill/auto-abort must not report a green verdict.
+func TestExecuteRunAbortedRunIsNotGreen(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		SchemaVersion: 1,
+		Target:        config.Target{BaseURL: srv.URL, Tier: model.TierLab},
+		// A 1ms duration cap trips almost immediately, aborting the run.
+		BlastRadius: config.BlastRadius{MaxConcurrency: 5, MaxDuration: config.Duration(time.Millisecond)},
+	}
+	sc := &scenario.Scenario{
+		Name:    "aborts",
+		Profile: scenario.Profile{Type: "sustained", Concurrency: 2, Duration: scenario.Duration(200 * time.Millisecond)},
+		SLOs:    scenario.SLOs{P99Under: dur(5 * time.Second)},
+	}
+	res, err := executeRun(context.Background(), cfg, sc, 1, nil)
+	if err != nil {
+		t.Fatalf("executeRun() error = %v", err)
+	}
+	if !res.Aborted {
+		t.Fatalf("expected the run to abort on the duration cap; reason=%q", res.AbortReason)
+	}
+	if res.Verdict.Passed {
+		t.Errorf("aborted run reported a green verdict (H1); results = %+v", res.Verdict.Results)
+	}
+}

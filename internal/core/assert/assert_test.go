@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/JonasBorgesLM/sapper/internal/core/metrics"
+	"github.com/JonasBorgesLM/sapper/internal/core/model"
 	"github.com/JonasBorgesLM/sapper/internal/core/scenario"
 )
 
@@ -82,5 +83,27 @@ func TestDegradation(t *testing.T) {
 	}
 	if r := Degradation(first, metrics.Snapshot{Latency: metrics.LatencyStats{P99: 200 * time.Millisecond}}, 1.5); r.Passed {
 		t.Errorf("degraded soak should fail: %s", r.Detail)
+	}
+}
+
+func TestWithAbortForcesVerdictRed(t *testing.T) {
+	passing := model.Verdict{Passed: true, Results: []model.SLOResult{{Name: "p99_under", Passed: true}}}
+
+	if got := WithAbort(passing, false, ""); !got.Passed {
+		t.Error("WithAbort(_, false, _) changed a passing verdict; a completed run must be unaffected")
+	}
+
+	aborted := WithAbort(passing, true, "kill switch")
+	if aborted.Passed {
+		t.Error("WithAbort(_, true, _) = passing; an aborted run must not pass (H1)")
+	}
+	var sawRunResult bool
+	for _, r := range aborted.Results {
+		if r.Name == "run_completed" && !r.Passed {
+			sawRunResult = true
+		}
+	}
+	if !sawRunResult {
+		t.Errorf("aborted verdict missing a failed run_completed result: %+v", aborted.Results)
 	}
 }

@@ -142,6 +142,7 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 	}
 
 	agg := metrics.Aggregate(snaps)
+	verdict := assert.WithAbort(assert.Evaluate(agg, sc.SLOs), guard.Stopped(), guard.Reason())
 	return model.Result{
 		Target:      cfg.TargetEcho(),
 		Scenario:    sc.Name,
@@ -151,7 +152,7 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 		Aborted:     guard.Stopped(),
 		AbortReason: guard.Reason(),
 		Metrics:     agg,
-		Verdict:     assert.Evaluate(agg, sc.SLOs),
+		Verdict:     verdict,
 	}, nil
 }
 
@@ -177,6 +178,7 @@ func executeSpike(ctx context.Context, cfg *config.Config, sc *scenario.Scenario
 			verdict.Passed = false
 		}
 	}
+	verdict = assert.WithAbort(verdict, guard.Stopped(), guard.Reason())
 
 	return model.Result{
 		Target:      cfg.TargetEcho(),
@@ -234,6 +236,7 @@ func executeSoak(ctx context.Context, cfg *config.Config, sc *scenario.Scenario,
 			verdict.Passed = false
 		}
 	}
+	verdict = assert.WithAbort(verdict, guard.Stopped(), guard.Reason())
 
 	return model.Result{
 		Target:      cfg.TargetEcho(),
