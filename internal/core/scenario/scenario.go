@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -152,6 +153,9 @@ func (s *Scenario) validate() error {
 		}
 	default:
 		errs = append(errs, fmt.Errorf("profile.type %q is not supported (want %q, %q, %q or %q)", s.Profile.Type, ProfileSustained, ProfileRampUp, ProfileSpike, ProfileSoak))
+	}
+	if s.Request.Path != "" && !strings.HasPrefix(s.Request.Path, "/") {
+		errs = append(errs, fmt.Errorf("request.path must start with '/', got %q", s.Request.Path))
 	}
 	if s.SLOs.Empty() {
 		errs = append(errs, errors.New("at least one SLO is required; a run with no SLO is a misconfiguration, not a benchmark (ADR-0001)"))

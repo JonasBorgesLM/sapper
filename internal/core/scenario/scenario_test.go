@@ -106,3 +106,16 @@ func TestLoadSoak(t *testing.T) {
 		t.Error("SLOs.Empty() = true, but degradation_under is declared")
 	}
 }
+
+func TestValidateRejectsPathWithoutLeadingSlash(t *testing.T) {
+	p99 := Duration(time.Second)
+	s := &Scenario{
+		Name:    "bad-path",
+		Profile: Profile{Type: ProfileSustained, Concurrency: 1, Duration: Duration(time.Second)},
+		Request: Request{Path: "users"}, // missing leading slash
+		SLOs:    SLOs{P99Under: &p99},
+	}
+	if err := s.validate(); err == nil || !strings.Contains(err.Error(), "path") {
+		t.Fatalf("validate() = %v, want an error naming request.path (L2)", err)
+	}
+}
