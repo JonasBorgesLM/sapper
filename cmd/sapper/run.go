@@ -91,6 +91,12 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 		return model.Result{}, fmt.Errorf("run: profile.baseline_concurrency %d exceeds blast_radius.max_concurrency %d", sc.Profile.BaselineConcurrency, maxc)
 	}
 
+	// Derive a cancellable context so the kill-switch watcher below is torn down
+	// when the run returns; otherwise it blocks on the parent context forever
+	// (a goroutine leak for any caller whose context outlives the run) (M4).
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	// The kill switch: cancelling ctx (SIGINT/SIGTERM, wired in main) halts the
 	// guard, which stops new load while in-flight requests drain (SR-04).
 	go blastguard.WatchContext(ctx, guard, "shutdown signal received")
