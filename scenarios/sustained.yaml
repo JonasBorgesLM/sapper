@@ -8,6 +8,10 @@ profile:
 request:
   method: GET
   path: /
+  # Optional: sent unchanged on every request — the only way to reach a
+  # target that requires auth today, since Sapper has no login flow (FR-10).
+  # headers:
+  #   Authorization: Bearer ${LAB_TOKEN}
 slos:
   p99_under: 200ms
   error_rate_under: 0.01

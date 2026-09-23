@@ -126,8 +126,16 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 		}
 	}
 	targetURL := strings.TrimSuffix(cfg.Target.BaseURL, "/") + path
+	headers := sc.Request.Headers // FR-10: static per-request headers
 	newReq := func(rctx context.Context) (*http.Request, error) {
-		return http.NewRequestWithContext(rctx, method, targetURL, nil)
+		req, err := http.NewRequestWithContext(rctx, method, targetURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		return req, nil
 	}
 	limits := blastguard.AutoAbortLimits{
 		ErrorRateOver: cfg.BlastRadius.AutoAbort.ErrorRateOver,

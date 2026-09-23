@@ -1,0 +1,12 @@
+name: with-env-header
+profile:
+  type: sustained
+  concurrency: 5
+  duration: 10s
+request:
+  method: GET
+  path: /v1/tasks
+  headers:
+    Authorization: Bearer ${TEST_SAPPER_TOKEN}
+slos:
+  p99_under: 200ms

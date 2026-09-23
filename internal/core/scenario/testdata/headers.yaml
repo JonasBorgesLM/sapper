@@ -1,0 +1,13 @@
+name: with-headers
+profile:
+  type: sustained
+  concurrency: 5
+  duration: 10s
+request:
+  method: GET
+  path: /v1/tasks
+  headers:
+    Authorization: Bearer test-token
+    X-Request-Id: fixed-for-load
+slos:
+  p99_under: 200ms

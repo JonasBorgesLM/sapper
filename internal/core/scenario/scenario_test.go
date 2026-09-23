@@ -28,6 +28,45 @@ func TestLoadValid(t *testing.T) {
 	}
 }
 
+// Static per-request headers (e.g. Authorization) for a target that needs
+// them — sapper has no login flow of its own (FR-10).
+func TestLoadRequestHeaders(t *testing.T) {
+	s, err := Load("testdata/headers.yaml")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	want := map[string]string{"Authorization": "Bearer test-token", "X-Request-Id": "fixed-for-load"}
+	if len(s.Request.Headers) != len(want) {
+		t.Fatalf("Request.Headers = %+v, want %+v", s.Request.Headers, want)
+	}
+	for k, v := range want {
+		if s.Request.Headers[k] != v {
+			t.Errorf("Request.Headers[%q] = %q, want %q", k, s.Request.Headers[k], v)
+		}
+	}
+}
+
+// FR-10, SR-07 (sapper's own invariant #4): a header value is expanded like
+// the safety config's secrets, so a real token lives in the environment, not
+// committed in the scenario file — and an unset one is a load-time error, not
+// a literal "${VAR}" sent to the target as a credential.
+func TestLoadExpandsHeaderEnvVars(t *testing.T) {
+	t.Setenv("TEST_SAPPER_TOKEN", "secret-value")
+	s, err := Load("testdata/headers-env.yaml")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := s.Request.Headers["Authorization"]; got != "Bearer secret-value" {
+		t.Errorf("Request.Headers[Authorization] = %q, want %q", got, "Bearer secret-value")
+	}
+}
+
+func TestLoadRejectsHeaderWithUnsetEnvVar(t *testing.T) {
+	if _, err := Load("testdata/headers-env.yaml"); err == nil {
+		t.Fatal("Load() error = nil, want an error for the unset TEST_SAPPER_TOKEN")
+	}
+}
+
 // #17 / ADR-0001: a scenario with no SLO is refused — Sapper asserts, it does
 // not benchmark.
 func TestLoadRefusesNoSLOs(t *testing.T) {

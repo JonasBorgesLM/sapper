@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/JonasBorgesLM/sapper/internal/envexpand"
 )
 
 // ProfileSustained is the only load profile v1 implements. Others (ramp-up,
@@ -39,6 +41,12 @@ type Scenario struct {
 type Request struct {
 	Method string `yaml:"method"`
 	Path   string `yaml:"path"`
+	// Headers are sent on every request. Sapper has no login flow of its own,
+	// so this is how a scenario reaches a target that requires auth (FR-10).
+	// A value may reference ${VAR}, expanded from the environment at load
+	// time like the safety config's secrets, so a real credential is never
+	// committed in the scenario file itself.
+	Headers map[string]string `yaml:"headers"`
 }
 
 // Profile is the load shape and its parameters.
@@ -105,6 +113,18 @@ func Load(path string) (*Scenario, error) {
 	var s Scenario
 	if err := yaml.Unmarshal(raw, &s); err != nil {
 		return nil, fmt.Errorf("scenario: parse %s: %w", path, err)
+	}
+	// FR-10, SR-07 (invariant #4): a header value is a place a real credential
+	// would go (e.g. Authorization), so it is expanded like the safety config's
+	// secrets — an unset ${VAR} fails the load rather than reaching the target
+	// as a literal string, and a committed scenario file never carries the
+	// value itself.
+	for k, v := range s.Request.Headers {
+		expanded, err := envexpand.Expand(v)
+		if err != nil {
+			return nil, fmt.Errorf("scenario: %s: request.headers[%s]: %w", path, k, err)
+		}
+		s.Request.Headers[k] = expanded
 	}
 	if err := s.validate(); err != nil {
 		return nil, fmt.Errorf("scenario: %s: %w", path, err)
