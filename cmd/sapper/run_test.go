@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -46,6 +47,46 @@ func TestExecuteRunEndToEnd(t *testing.T) {
 	}
 	if res.Aborted {
 		t.Errorf("Aborted = true, want false; reason = %q", res.AbortReason)
+	}
+}
+
+// A target that needs auth has no login flow to drive here yet (sapper has
+// none), so a scenario configures the header directly, e.g. Authorization.
+// Every request the generator sends must carry it.
+func TestExecuteRunSendsConfiguredHeaders(t *testing.T) {
+	var mu sync.Mutex
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		got = r.Header.Get("Authorization")
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		SchemaVersion: 1,
+		Target:        config.Target{BaseURL: srv.URL, Tier: model.TierLab},
+		BlastRadius:   config.BlastRadius{MaxConcurrency: 5, MaxDuration: config.Duration(time.Minute)},
+	}
+	sc := &scenario.Scenario{
+		Name:    "headers",
+		Profile: scenario.Profile{Type: "sustained", Concurrency: 2, Duration: scenario.Duration(30 * time.Millisecond)},
+		Request: scenario.Request{Headers: map[string]string{"Authorization": "Bearer test-token"}},
+		SLOs:    scenario.SLOs{P99Under: dur(5 * time.Second)},
+	}
+
+	res, err := executeRun(context.Background(), cfg, sc, 1, nil)
+	if err != nil {
+		t.Fatalf("executeRun() error = %v", err)
+	}
+	if res.Aborted {
+		t.Fatalf("Aborted = true, reason = %q", res.AbortReason)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if got != "Bearer test-token" {
+		t.Errorf("target received Authorization = %q, want %q", got, "Bearer test-token")
 	}
 }
 

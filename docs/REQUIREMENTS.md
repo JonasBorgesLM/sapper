@@ -77,6 +77,9 @@ interactive (SR-02).
 - **FR-09** *(Roadmap, Case 4)* A **fault-injector** interface lets a scenario
   inject latency/error/drop into a target's dependency without touching the
   target's code. v1 defines the port only; no implementation. (ADR-0004.)
+- **FR-10** A scenario's `request` may declare static **headers** sent
+  unchanged on every request (e.g. a bearer token). Sapper has no login flow
+  of its own; this is how it reaches a target that requires auth.
 
 One sentence each. Anything needing a paragraph is two requirements or an ADR.
 

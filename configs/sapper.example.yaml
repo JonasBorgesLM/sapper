@@ -30,8 +30,9 @@ blast_radius:
     error_rate_over: 0.5     # abort if >50% transport errors in a window
     p99_over: 2s             # abort if p99 exceeds this in a window
 
-# Optional. Omit entirely for a target that needs no auth. Never commit a real
-# credential — ${VAR} is read from the environment.
+# Not yet implemented: parsed but not wired to a login flow. A target that
+# needs auth today is reached with a static header instead — see
+# scenarios/sustained.yaml's request.headers (FR-10).
 # auth:
 #   login_endpoint: /login
 #   credentials:

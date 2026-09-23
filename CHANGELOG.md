@@ -10,6 +10,11 @@ fault injection, to an authorized target and asserts the observed behaviour
 against SLOs declared in the scenario — a green/red verdict, gateable in CI.
 
 ### Added
+- **Request headers (FR-10)** — a scenario's `request` may declare static
+  headers, sent unchanged on every request; the only way to reach a target
+  that requires auth today, since Sapper has no login flow of its own. Values
+  are expanded like the safety config's secrets (`${VAR}`), so a real
+  credential lives in the environment, not committed in the scenario file.
 - **Load profiles** — sustained, ramp-up, spike, and soak, driven by a shared
   engine through the guarded client into the metrics collector.
 - **SLO assertions** — `p99_under`, `error_rate_under`, `status_seen`,
