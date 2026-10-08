@@ -10,6 +10,7 @@ package scenario
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -22,10 +23,11 @@ import (
 // ProfileSustained is the only load profile v1 implements. Others (ramp-up,
 // spike, soak) reuse the same engine and are added by their own issues.
 const (
-	ProfileSustained = "sustained"
-	ProfileRampUp    = "ramp-up"
-	ProfileSpike     = "spike"
-	ProfileSoak      = "soak"
+	ProfileSustained      = "sustained"
+	ProfileRampUp         = "ramp-up"
+	ProfileSpike          = "spike"
+	ProfileSoak           = "soak"
+	ProfileFaultInjection = "fault-injection"
 )
 
 // Scenario is the root of a scenario file.
@@ -64,6 +66,26 @@ type Profile struct {
 	// Soak-only: the number of measurement windows the run is split into, to
 	// detect slow degradation across them (at least 2).
 	Windows int `yaml:"windows"`
+
+	// Fault-injection-only (Case 4, ADR-0009): BaselineConcurrency/
+	// BaselineDuration are the before/after phases (reused from Spike's own
+	// fields — the shape is identical, before/during/after, just with the
+	// dependency faulted instead of the load raised); Concurrency/Duration
+	// are the faulted phase's own load. Upstream is the real dependency the
+	// injector forwards to; Listen is the address it binds to for the run —
+	// the operator's own target must already be configured to send that one
+	// dependency's traffic there (ADR-0007: "the target is pointed at the
+	// proxy's address for the run").
+	Upstream string `yaml:"upstream"`
+	Listen   string `yaml:"listen"`
+	// FaultKind is "error", "latency" or "drop" — validated here as a plain
+	// string (this package stays below internal/adapters/inject in the
+	// hexagonal layering; cmd/sapper is the composition root that actually
+	// converts it to an inject.Kind). FaultStatus applies to "error";
+	// FaultDelay applies to "latency".
+	FaultKind   string   `yaml:"fault_kind"`
+	FaultStatus int      `yaml:"fault_status"`
+	FaultDelay  Duration `yaml:"fault_delay"`
 }
 
 // SLOs are the constraints a run is asserted against. Each set field is one
@@ -171,8 +193,43 @@ func (s *Scenario) validate() error {
 		if s.Profile.Windows < 2 {
 			errs = append(errs, fmt.Errorf("profile.windows must be at least 2 to detect degradation, got %d", s.Profile.Windows))
 		}
+	case ProfileFaultInjection:
+		if s.Profile.BaselineConcurrency <= 0 {
+			errs = append(errs, fmt.Errorf("profile.baseline_concurrency must be a positive integer, got %d", s.Profile.BaselineConcurrency))
+		}
+		if time.Duration(s.Profile.BaselineDuration) <= 0 {
+			errs = append(errs, errors.New("profile.baseline_duration must be a positive duration"))
+		}
+		if s.Profile.Concurrency <= 0 {
+			errs = append(errs, errors.New("profile.concurrency (the faulted phase's load) must be a positive integer"))
+		}
+		if time.Duration(s.Profile.Duration) <= 0 {
+			errs = append(errs, errors.New("profile.duration (the faulted phase's length) must be a positive duration"))
+		}
+		if s.Profile.Upstream == "" {
+			errs = append(errs, errors.New("profile.upstream is required: the real dependency the fault injector forwards to"))
+		} else if u, err := url.Parse(s.Profile.Upstream); err != nil || !u.IsAbs() || u.Host == "" {
+			errs = append(errs, fmt.Errorf("profile.upstream %q must be an absolute URL with a host", s.Profile.Upstream))
+		}
+		if s.Profile.Listen == "" {
+			errs = append(errs, errors.New("profile.listen is required: the address the fault injector binds to for this run"))
+		}
+		switch s.Profile.FaultKind {
+		case "error":
+			if s.Profile.FaultStatus == 0 {
+				errs = append(errs, errors.New("profile.fault_status is required when fault_kind is \"error\""))
+			}
+		case "latency":
+			if time.Duration(s.Profile.FaultDelay) <= 0 {
+				errs = append(errs, errors.New("profile.fault_delay must be a positive duration when fault_kind is \"latency\""))
+			}
+		case "drop":
+			// no further parameter
+		default:
+			errs = append(errs, fmt.Errorf("profile.fault_kind %q is not one of %q, %q or %q", s.Profile.FaultKind, "error", "latency", "drop"))
+		}
 	default:
-		errs = append(errs, fmt.Errorf("profile.type %q is not supported (want %q, %q, %q or %q)", s.Profile.Type, ProfileSustained, ProfileRampUp, ProfileSpike, ProfileSoak))
+		errs = append(errs, fmt.Errorf("profile.type %q is not supported (want %q, %q, %q, %q or %q)", s.Profile.Type, ProfileSustained, ProfileRampUp, ProfileSpike, ProfileSoak, ProfileFaultInjection))
 	}
 	if s.Request.Path != "" && !strings.HasPrefix(s.Request.Path, "/") {
 		errs = append(errs, fmt.Errorf("request.path must start with '/', got %q", s.Request.Path))

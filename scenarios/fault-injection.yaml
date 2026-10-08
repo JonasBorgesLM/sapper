@@ -1,0 +1,27 @@
+# Case 4: inject a dependency fault, assert a bastion-wrapped target's own
+# circuit breaker opens (status_seen) under it and recovers (recovery_within)
+# once it clears.
+#
+# Unlike every other scenario here, this one needs the target under test
+# configured OUTSIDE Sapper, before the run starts: whatever dependency
+# `profile.upstream` below really is, the target must send that one
+# dependency's traffic to `profile.listen` instead, for the run's duration
+# (ADR-0007). Sapper cannot arrange that on the target's behalf — it owns
+# the injector, not the target's own config.
+name: fault-injection-breaker
+profile:
+  type: fault-injection
+  baseline_concurrency: 5
+  baseline_duration: 10s
+  concurrency: 20       # the faulted phase's load
+  duration: 10s          # the faulted phase's length
+  upstream: http://127.0.0.1:9201   # the real dependency the injector forwards to
+  listen: 127.0.0.1:9200            # point the target's own dependency config here
+  fault_kind: error      # error | latency | drop
+  fault_status: 503      # fault_kind: error only
+request:
+  method: GET
+  path: /
+slos:
+  status_seen: 503        # the breaker's own fast-fail status, seen during the fault
+  recovery_within: 1.5    # post-fault p99 <= pre-fault p99 x 1.5

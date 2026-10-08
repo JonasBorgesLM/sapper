@@ -12,6 +12,7 @@ package inject
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -40,6 +41,23 @@ type Fault struct {
 	Kind   Kind
 	Status int
 	Delay  time.Duration
+}
+
+// ParseKind converts a scenario file's own fault_kind string into a Kind.
+// Kept here, next to the enum it parses, rather than in the scenario or cmd
+// package, so the string vocabulary ("error", "latency", "drop") and the
+// type it maps to never drift apart.
+func ParseKind(s string) (Kind, error) {
+	switch s {
+	case "error":
+		return Error, nil
+	case "latency":
+		return Latency, nil
+	case "drop":
+		return Drop, nil
+	default:
+		return None, fmt.Errorf("inject: fault_kind %q is not one of %q, %q, %q", s, "error", "latency", "drop")
+	}
 }
 
 // Proxy is the fault-injecting reverse proxy. Its zero fault (None) forwards

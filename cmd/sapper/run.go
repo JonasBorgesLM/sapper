@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/JonasBorgesLM/sapper/internal/adapters/config"
 	"github.com/JonasBorgesLM/sapper/internal/adapters/httpclient"
+	"github.com/JonasBorgesLM/sapper/internal/adapters/inject"
 	"github.com/JonasBorgesLM/sapper/internal/adapters/openapi"
 	"github.com/JonasBorgesLM/sapper/internal/adapters/probe"
 	"github.com/JonasBorgesLM/sapper/internal/core/assert"
@@ -148,6 +150,9 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 	if sc.Profile.Type == scenario.ProfileSoak {
 		return executeSoak(ctx, cfg, sc, guard, client, newReq, limits, start), nil
 	}
+	if sc.Profile.Type == scenario.ProfileFaultInjection {
+		return executeFaultInjection(ctx, cfg, sc, guard, client, newReq, limits, start)
+	}
 
 	if runs < 1 {
 		runs = 1
@@ -263,6 +268,88 @@ func executeSpike(ctx context.Context, cfg *config.Config, sc *scenario.Scenario
 		Metrics:     agg,
 		Verdict:     verdict,
 	}
+}
+
+// executeFaultInjection runs the fault-injection profile (Case 4, ADR-0009):
+// a baseline phase, a faulted phase, then a recovery phase — the same
+// before/during/after shape executeSpike already uses, except the load
+// level stays constant throughout and what changes is the target's own
+// dependency's health. The fault injector (internal/adapters/inject) is
+// started as a real listener on sc.Profile.Listen for the run's duration;
+// the target under test must already be configured (outside Sapper) to
+// route that one dependency's traffic there (ADR-0007's own operational
+// requirement) — Sapper cannot reach into the target's own configuration to
+// arrange this itself.
+//
+// The injector shares guard with the load path (ADR-0007: "a fault cannot
+// be injected against an unauthorized tier... the same in-process guarantee
+// the load path already has") — it is not a second, independently-tiered
+// subsystem.
+func executeFaultInjection(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, guard *blastguard.BlastGuard, client *httpclient.Client, newReq generator.RequestFunc, limits blastguard.AutoAbortLimits, start time.Time) (model.Result, error) {
+	kind, err := inject.ParseKind(sc.Profile.FaultKind)
+	if err != nil {
+		// scenario.Load already rejects an unknown fault_kind before a run
+		// ever reaches here; this guards a Scenario built by hand (as the
+		// tests below do) rather than loaded from a file.
+		return model.Result{}, fmt.Errorf("fault-injection: %w", err)
+	}
+	proxy, err := inject.New(guard, sc.Profile.Upstream)
+	if err != nil {
+		return model.Result{}, fmt.Errorf("fault-injection: build injector: %w", err)
+	}
+	ln, err := net.Listen("tcp", sc.Profile.Listen)
+	if err != nil {
+		return model.Result{}, fmt.Errorf("fault-injection: listen on %s: %w", sc.Profile.Listen, err)
+	}
+	// ReadHeaderTimeout: the injector is a live, real listener for the run's
+	// duration (ADR-0007), not a test fixture — net/http's own default is no
+	// timeout at all, which turns a slow or stalled client into a held
+	// connection for as long as it likes (G112, CWE-400).
+	srv := &http.Server{Handler: proxy, ReadHeaderTimeout: 5 * time.Second}
+	go func() { _ = srv.Serve(ln) }()
+	defer func() {
+		// Bounded, not tied to ctx: ctx may already be cancelled (kill
+		// switch) by the time this runs, and a shutdown still needs its own
+		// moment to close the listener and let the last injected-latency
+		// request (if any) drain.
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	}()
+
+	baseline := generator.Sustained{Concurrency: sc.Profile.BaselineConcurrency, Duration: time.Duration(sc.Profile.BaselineDuration)}
+	faulted := generator.Sustained{Concurrency: sc.Profile.Concurrency, Duration: time.Duration(sc.Profile.Duration)}
+
+	before := runGuardedPhase(ctx, guard, client, newReq, limits, baseline)
+
+	proxy.SetFault(inject.Fault{Kind: kind, Status: sc.Profile.FaultStatus, Delay: time.Duration(sc.Profile.FaultDelay)})
+	duringSnap := runGuardedPhase(ctx, guard, client, newReq, limits, faulted)
+
+	proxy.SetFault(inject.Fault{Kind: inject.None})
+	after := runGuardedPhase(ctx, guard, client, newReq, limits, baseline)
+
+	agg := metrics.Aggregate([]metrics.Snapshot{before, duringSnap, after})
+	verdict := assert.Evaluate(agg, sc.SLOs)
+	if sc.SLOs.RecoveryWithin != nil {
+		rec := assert.Recovery(before, after, *sc.SLOs.RecoveryWithin)
+		verdict.Results = append(verdict.Results, rec)
+		if !rec.Passed {
+			verdict.Passed = false
+		}
+	}
+	verdict = assert.WithAbort(verdict, guard.Stopped(), guard.Reason())
+
+	return model.Result{
+		Target:      cfg.TargetEcho(),
+		Scenario:    sc.Name,
+		Profile:     sc.Profile.Type,
+		StartedAt:   start,
+		CompletedAt: time.Now(),
+		Aborted:     guard.Stopped(),
+		AbortReason: guard.Reason(),
+		Metrics:     agg,
+		Verdict:     verdict,
+	}, nil
 }
 
 // runGuardedPhase runs one sustained phase into a fresh collector, with its own

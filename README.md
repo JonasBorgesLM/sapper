@@ -4,9 +4,10 @@
 controlled fault injection, asserted against a declared expectation — pass or
 fail.** For authorized lab and staging targets only.
 
-> **Status: v1 (Case 1) works.** The sustained scenario runs end to end —
-> `run` → `assert` → `report` — with BlastGuard enforcing the safety invariants.
-> Ramp-up, spike, chaos injection and soak are on the [roadmap](#roadmap) below.
+> **Status: all five cases in the [roadmap](#roadmap) below are built** —
+> sustained, ramp-up, spike, soak, and fault injection against a
+> bastion-wrapped breaker — each running end to end through `run` → `assert`
+> → `report`, with BlastGuard enforcing the safety invariants throughout.
 > See [`docs/`](docs/) for the design.
 
 Sapper is the offensive complement to **Warden**, the black-box API security
@@ -90,6 +91,7 @@ The shipped [`scenarios/`](scenarios/) cover each load shape:
 | [`ramp-up.yaml`](scenarios/ramp-up.yaml) | rising to a peak | `status_seen` (the limiter's 429) |
 | [`spike.yaml`](scenarios/spike.yaml) | baseline → peak → baseline | `recovery_within` (p99 returns to baseline) |
 | [`soak.yaml`](scenarios/soak.yaml) | long, windowed | `degradation_under` (no slow drift) |
+| [`fault-injection.yaml`](scenarios/fault-injection.yaml) | baseline → faulted → recovery | `status_seen` (the breaker's own fast-fail), `recovery_within` |
 
 The safety config is separate from the scenario, so one config guards many
 scenarios — see [`configs/sapper.example.yaml`](configs/sapper.example.yaml) for
@@ -101,8 +103,9 @@ spec).
 Sapper is the natural test harness for the defenses already built:
 
 - **[`bastion`](https://github.com/JonasBorgesLM/bastion)** (circuit breaker, retry,
-  timeout) — point Sapper at a bastion-wrapped service, inject a dependency fault,
-  and *assert* the breaker opens and recovers. (Roadmap — Case 4.)
+  timeout) — point Sapper at a bastion-wrapped service
+  ([`fault-injection.yaml`](scenarios/fault-injection.yaml)), inject a dependency
+  fault, and *assert* the breaker opens and recovers (ADR-0009).
 - **`gateway-auth` / middleware libraries** (rate limiting) — validate the limiter
   under a real burst and concurrency.
 
@@ -117,7 +120,7 @@ Ordered smallest blast radius to largest; each case has a clear assertion.
 3. **`spike`** — sudden peak; assert recovery (latency returns to baseline).
 4. **Fault injection + circuit breaker** — drop a dependency through the injector
    seam; assert the breaker opens and the service degrades gracefully. *Ties to
-   `bastion`.* (Deferred; the injector port is reserved in the architecture.)
+   `bastion`.* (ADR-0009.)
 5. **`soak`** — moderate load over long duration; hunt memory/connection leaks.
 
 ## Explicitly out of scope

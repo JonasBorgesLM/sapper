@@ -14,11 +14,12 @@ New records start from [`TEMPLATE.md`](TEMPLATE.md).
 | [`0001`](0001-assertion-not-benchmark.md) | Sapper asserts against SLOs; it is not a benchmark | Accepted | — |
 | [`0002`](0002-blastguard-middleware.md) | BlastGuard is mandatory middleware in the one HTTP client | Accepted | — |
 | [`0003`](0003-statistical-honesty.md) | Statistical honesty replaces byte-for-byte determinism | Accepted | — |
-| [`0004`](0004-defer-fault-injector.md) | Defer the fault injector; reserve the port in v1 | Accepted | `0007` |
+| [`0004`](0004-defer-fault-injector.md) | Defer the fault injector; reserve the port in v1 | Accepted | `0007`, `0009` |
 | [`0005`](0005-warden-sapper-naming.md) | Warden inspects, Sapper mines; scanner renamed to Warden | Accepted | — |
 | [`0006`](0006-reuse-from-warden.md) | Reuse Warden's config style, OpenAPI import, and JSON pipeline | Accepted | — |
 | [`0007`](0007-fault-injection-approach.md) | Build a minimal in-process fault proxy, not integrate toxiproxy | Accepted | — |
 | [`0008`](0008-minimal-openapi-parser.md) | Parse OpenAPI minimally with the YAML library, not kin-openapi | Accepted | — |
+| [`0009`](0009-fault-injection-cli-scenario.md) | Fault injection is a scenario profile, reusing Spike's shape and existing SLOs | Accepted | — |
 
 ## Reopening criteria on the record
 
@@ -27,6 +28,7 @@ New records start from [`TEMPLATE.md`](TEMPLATE.md).
 | `0007` | A scenario needs a fault type the minimal proxy cannot express (bandwidth, slicer, partial writes) — integrate toxiproxy then |
 | `0008` | A scenario needs request bodies generated from schemas, or a spec using `$ref` indirection — adopt kin-openapi then |
 | `0003` | A metrics histogram dependency is chosen — record it in its own ADR |
+| `0009` | A scenario needs the faulted phase's own load to differ from the baseline's — the schema reused Spike's pair as-is, deliberately, for as long as they stay equal |
 
 ## Open questions
 
