@@ -13,7 +13,7 @@ func TestShippedExamplesLoad(t *testing.T) {
 	if _, err := config.Load("../../configs/sapper.example.yaml"); err != nil {
 		t.Errorf("configs/sapper.example.yaml does not load: %v", err)
 	}
-	for _, name := range []string{"sustained", "ramp-up", "spike", "soak"} {
+	for _, name := range []string{"sustained", "ramp-up", "spike", "soak", "fault-injection"} {
 		if _, err := scenario.Load("../../scenarios/" + name + ".yaml"); err != nil {
 			t.Errorf("scenarios/%s.yaml does not load: %v", name, err)
 		}

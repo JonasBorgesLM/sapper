@@ -7,11 +7,13 @@ discipline, clean code, testing, review, security, git hygiene, verification —
 live in `~/.claude/CLAUDE.md` and are already loaded. This file carries only what
 is true of Sapper.
 
-**This project is pre-code.** What exists today is the design: `README.md`,
+**All five roadmap cases are built**: sustained, ramp-up, spike, soak, and
+fault injection against a bastion-wrapped breaker (ADR-0009), each running
+end to end through `run` → `assert` → `report`. Read `README.md`,
 `docs/REQUIREMENTS.md`, `docs/THREAT-MODEL.md`, `docs/architecture.md`, and
-`docs/adr/`. Read the architecture and the threat model before writing the first
-line of implementation — the safety properties are structural, not additive, and
-retrofitting them is how they end up bypassable.
+`docs/adr/` before changing anything structural — the safety properties are
+structural, not additive, and retrofitting them is how they end up
+bypassable.
 
 ## Project Overview
 
@@ -42,9 +44,12 @@ be tested against fakes with no real network. Full detail in
   **BlastGuard**, wired as mandatory middleware — the structural mirror of
   Warden's `ScopeGuard`. Nothing generates load without going through it. This is
   the single most important invariant in the codebase.
-- The **fault-injector port** is defined but **not implemented in v1** (Case 4 is
-  deferred). Reserve the seam; do not build behind it until the load spine is
-  proven. See [ADR-0004](docs/adr/0004-defer-fault-injector.md).
+- The **fault injector** (`internal/adapters/inject`) is built: a minimal
+  in-process reverse proxy (ADR-0007), driven from a real `fault-injection`
+  scenario (`cmd/sapper/run.go`'s `executeFaultInjection`, ADR-0009), sharing
+  the same `BlastGuard` the load path uses. See
+  [ADR-0004](docs/adr/0004-defer-fault-injector.md) for why it was deferred
+  first, and its own amendments for how it was eventually built.
 - Subcommands are independent pipeline stages chained through JSON on disk
   (`run → assert → report`), the same philosophy as Warden.
 
@@ -63,14 +68,11 @@ be tested against fakes with no real network. Full detail in
 
 ## Commands
 
-**Planned — no code exists yet.** These are the intended shapes, to be verified
-against the real binary once it exists:
-
 ```bash
 go build ./...
 go vet ./...
 GOTOOLCHAIN=go1.25.x golangci-lint run ./...   # pin the toolchain; see Stack
-go test ./...
+go test -race ./...
 go build -o sapper ./cmd/sapper
 
 sapper run    --scenario scenarios/sustained.yaml --config config.yaml --out result.json

@@ -112,3 +112,63 @@ func TestNewRequiresGuard(t *testing.T) {
 		t.Error("New(nil, ...) = nil error; a fault injector must be built with an authorised guard (T-05)")
 	}
 }
+
+// TestProxyStopsInjectingOnceGuardHalted is ADR-0007's own claim made
+// concrete: "a fault cannot be injected against an unauthorized tier... the
+// same in-process guarantee the load path already has." A kill switch or
+// auto-abort calls BlastGuard.Stop, and from that point the proxy must
+// forward cleanly rather than keep degrading a real dependency nobody is
+// authorising it against anymore.
+//
+// Negative control: with the `p.guard.Stopped()` check removed from
+// ServeHTTP, this test failed — the proxy kept returning the injected fault
+// after the guard halted. Verified by hand, restored before committing.
+func TestProxyStopsInjectingOnceGuardHalted(t *testing.T) {
+	up, hits := upstream(t)
+	g, err := blastguard.New(model.TierLab, model.Caps{MaxConcurrency: 4, MaxDuration: time.Minute})
+	if err != nil {
+		t.Fatalf("guard: %v", err)
+	}
+	p, err := New(g, up.URL)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	p.SetFault(Fault{Kind: Error, Status: 503})
+	front := httptest.NewServer(p)
+	defer front.Close()
+
+	g.Stop("test: simulated kill switch")
+
+	resp, err := http.Get(front.URL)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != 200 || string(body) != "up" || atomic.LoadInt32(hits) != 1 {
+		t.Errorf("after guard halt: status=%d body=%q hits=%d, want a clean forward to the real upstream", resp.StatusCode, body, atomic.LoadInt32(hits))
+	}
+}
+
+func TestParseKind(t *testing.T) {
+	cases := []struct {
+		in      string
+		want    Kind
+		wantErr bool
+	}{
+		{"error", Error, false},
+		{"latency", Latency, false},
+		{"drop", Drop, false},
+		{"bogus", None, true},
+		{"", None, true},
+	}
+	for _, c := range cases {
+		got, err := ParseKind(c.in)
+		if (err != nil) != c.wantErr {
+			t.Errorf("ParseKind(%q) error = %v, wantErr %v", c.in, err, c.wantErr)
+		}
+		if got != c.want {
+			t.Errorf("ParseKind(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}

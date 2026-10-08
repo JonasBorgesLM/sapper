@@ -146,6 +146,49 @@ func TestLoadSoak(t *testing.T) {
 	}
 }
 
+func TestLoadFaultInjection(t *testing.T) {
+	s, err := Load("testdata/fault-injection.yaml")
+	if err != nil {
+		t.Fatalf("Load(fault-injection) error = %v", err)
+	}
+	if s.Profile.Type != ProfileFaultInjection || s.Profile.BaselineConcurrency != 3 || s.Profile.Concurrency != 10 {
+		t.Errorf("Profile = %+v", s.Profile)
+	}
+	if s.Profile.Upstream != "http://127.0.0.1:9201" || s.Profile.Listen != "127.0.0.1:9200" {
+		t.Errorf("Upstream/Listen = %q/%q", s.Profile.Upstream, s.Profile.Listen)
+	}
+	if s.Profile.FaultKind != "error" || s.Profile.FaultStatus != 503 {
+		t.Errorf("FaultKind/FaultStatus = %q/%d", s.Profile.FaultKind, s.Profile.FaultStatus)
+	}
+	if s.SLOs.StatusSeen == nil || *s.SLOs.StatusSeen != 503 {
+		t.Errorf("StatusSeen = %v, want 503", s.SLOs.StatusSeen)
+	}
+	if s.SLOs.RecoveryWithin == nil || *s.SLOs.RecoveryWithin != 1.5 {
+		t.Errorf("RecoveryWithin = %v, want 1.5", s.SLOs.RecoveryWithin)
+	}
+}
+
+// TestLoadFaultInjectionRequiresUpstream is ADR-0009's own "wiring mistake
+// must be loud": a fault-injection profile with no upstream is refused
+// rather than building an injector with nowhere real to forward to.
+//
+// Negative control: with the `s.Profile.Upstream == ""` check removed from
+// validate(), this test failed — Load succeeded with no upstream at all.
+// Verified by hand, restored before committing.
+func TestLoadFaultInjectionRequiresUpstream(t *testing.T) {
+	_, err := Load("testdata/fault-injection-no-upstream.yaml")
+	if err == nil || !strings.Contains(err.Error(), "upstream") {
+		t.Fatalf("Load(fault-injection-no-upstream) error = %v, want a refusal naming upstream", err)
+	}
+}
+
+func TestLoadFaultInjectionRejectsUnknownFaultKind(t *testing.T) {
+	_, err := Load("testdata/fault-injection-bad-kind.yaml")
+	if err == nil || !strings.Contains(err.Error(), "fault_kind") {
+		t.Fatalf("Load(fault-injection-bad-kind) error = %v, want a refusal naming fault_kind", err)
+	}
+}
+
 func TestValidateRejectsPathWithoutLeadingSlash(t *testing.T) {
 	p99 := Duration(time.Second)
 	s := &Scenario{

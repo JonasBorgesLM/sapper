@@ -1,0 +1,12 @@
+name: fault-injection-no-upstream
+profile:
+  type: fault-injection
+  baseline_concurrency: 3
+  baseline_duration: 2s
+  concurrency: 10
+  duration: 1s
+  listen: 127.0.0.1:9200
+  fault_kind: error
+  fault_status: 503
+slos:
+  status_seen: 503

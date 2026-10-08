@@ -44,3 +44,11 @@ toxiproxy" — is resolved by [ADR-0007](0007-fault-injection-approach.md): buil
 a minimal in-process fault proxy. This ADR's decision to reserve the port and
 not build behind it in v1 stands unchanged; ADR-0007 only settles *how* the
 adapter is built when Case 4 is implemented.
+
+## Amendment (ADR-0009)
+This ADR's own reopening criterion's second point — "revisit whether the
+reserved port shape survived contact" — is answered by
+[ADR-0009](0009-fault-injection-cli-scenario.md): it did. `inject.New`'s own
+`(guard, upstream)` constructor and `Proxy.SetFault` needed no change to be
+driven from a real `sapper run` scenario rather than only from
+`tiein_test.go`'s own direct call. Case 4 is no longer deferred.

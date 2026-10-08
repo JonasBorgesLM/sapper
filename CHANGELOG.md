@@ -15,8 +15,9 @@ against SLOs declared in the scenario — a green/red verdict, gateable in CI.
   that requires auth today, since Sapper has no login flow of its own. Values
   are expanded like the safety config's secrets (`${VAR}`), so a real
   credential lives in the environment, not committed in the scenario file.
-- **Load profiles** — sustained, ramp-up, spike, and soak, driven by a shared
-  engine through the guarded client into the metrics collector.
+- **Load profiles** — sustained, ramp-up, spike, soak, and fault-injection
+  (ADR-0009), driven by a shared engine through the guarded client into the
+  metrics collector.
 - **SLO assertions** — `p99_under`, `error_rate_under`, `status_seen`,
   `recovery_within` (spike), `degradation_under` (soak); evaluated variance-aware
   across N runs, never a single best run (ADR-0003).
@@ -27,8 +28,10 @@ against SLOs declared in the scenario — a green/red verdict, gateable in CI.
 - **Metrics** — exact latency percentiles (nearest-rank), per-status counts,
   transport error rate, warm-up discard, and N-run aggregation with spread.
 - **Fault injection** — an in-process reverse proxy injecting error / latency /
-  dropped-connection faults, behind the tier gate (ADR-0007); a tie-in test
-  proves a circuit breaker opens and recovers under an injected fault.
+  dropped-connection faults, behind the tier gate (ADR-0007), now driven by a
+  real `fault-injection` scenario profile through `run` → `assert` → `report`
+  (ADR-0009); a tie-in test proves a circuit breaker opens and recovers under
+  an injected fault.
 - **OpenAPI import** — resolve and validate a scenario's target endpoint against
   a spec, parsed with the YAML library rather than a heavy dependency (ADR-0008).
 - **CLI** — `run`, `assert`, `report`: independent stages chained through
@@ -39,10 +42,8 @@ against SLOs declared in the scenario — a green/red verdict, gateable in CI.
   lint, gosec, govulncheck, and documentation and ADR-immutability guards.
 
 ### Decisions
-Recorded as ADRs 0001–0008 in docs/adr/.
+Recorded as ADRs 0001–0009 in docs/adr/.
 
 ### Not included
-- A CLI-driven chaos scenario; the fault injector is currently exercised through
-  the bastion tie-in test, not a `run` profile.
 - `$ref` indirection or schema-derived request bodies from OpenAPI specs — the
   reopening trigger noted in ADR-0008.
