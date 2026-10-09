@@ -59,7 +59,9 @@ be tested against fakes with no real network. Full detail in
   directive is the minimum *language* version; pin the build `toolchain` in
   `go.mod` for the reason documented in Warden's `go.mod` — `golangci-lint`/
   `staticcheck` fail with `export data version ...` errors that look like stdlib
-  bugs when the local Go is newer than the tool's build.
+  bugs when the local Go is newer than the tool's build. The toolchain is
+  **1.27.2** for GO-2026-6617 (#54) — a security pin, not a feature choice; do
+  not move it back to the 1.25 line, which no longer receives fixes.
 - Module path: `github.com/JonasBorgesLM/sapper`.
 - Standard-library-first, like the siblings. Any external dependency needs a
   justification recorded in an ADR (notably: the metrics histogram — see
@@ -71,7 +73,7 @@ be tested against fakes with no real network. Full detail in
 ```bash
 go build ./...
 go vet ./...
-GOTOOLCHAIN=go1.25.x golangci-lint run ./...   # pin the toolchain; see Stack
+GOTOOLCHAIN=go1.27.2 golangci-lint run ./...   # the build toolchain; see Stack
 go test -race ./...
 go build -o sapper ./cmd/sapper
 

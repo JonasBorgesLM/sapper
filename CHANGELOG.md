@@ -41,6 +41,14 @@ against SLOs declared in the scenario — a green/red verdict, gateable in CI.
 - **Tooling** — example config and scenarios, and a CI pipeline with build,
   lint, gosec, govulncheck, and documentation and ADR-immutability guards.
 
+### Security
+- **Build toolchain on Go 1.27.2** (#54) — GO-2026-6617 / CVE-2026-97032, an
+  HTTP/2 server crash in `net/http`, affects every release before 1.26.9 and
+  1.27.0–1.27.1. The `toolchain` line moves from 1.25.14 (a line that no longer
+  receives fixes) to 1.27.2, so a `go install` builds on a fixed standard
+  library; the `go` language floor stays 1.25.0. Sapper does not serve TLS or
+  h2c, so the path was not reachable in practice.
+
 ### Decisions
 Recorded as ADRs 0001–0009 in docs/adr/.
 
