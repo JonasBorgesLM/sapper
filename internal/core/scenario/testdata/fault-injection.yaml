@@ -12,3 +12,6 @@ profile:
 slos:
   status_seen: 503
   recovery_within: 1.5
+  recovered_status:
+    status: 200
+    min_fraction: 0.5

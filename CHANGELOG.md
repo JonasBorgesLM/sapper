@@ -19,8 +19,11 @@ against SLOs declared in the scenario — a green/red verdict, gateable in CI.
   (ADR-0009), driven by a shared engine through the guarded client into the
   metrics collector.
 - **SLO assertions** — `p99_under`, `error_rate_under`, `status_seen`,
-  `recovery_within` (spike), `degradation_under` (soak); evaluated variance-aware
-  across N runs, never a single best run (ADR-0003).
+  `recovery_within` (spike), `degradation_under` (soak), `recovered_status`
+  (fault-injection: the after-phase answers healthy again, the one SLO a breaker
+  stuck open fails — #57, ADR-0009's amendment); evaluated variance-aware
+  across N runs, never a single best run (ADR-0003). Fault-injection results
+  carry per-phase metrics (`phases`).
 - **BlastGuard safety layer** (SR-01..SR-06) — environment tier gate plus an
   interactive production gate a non-interactive CI cannot clear, mandatory
   concurrency and duration caps, a kill switch, catastrophic auto-abort, and a

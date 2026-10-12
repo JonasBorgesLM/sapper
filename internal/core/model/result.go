@@ -44,6 +44,18 @@ type Result struct {
 	// correlate a target-side value with the load (present when a metrics
 	// endpoint is configured).
 	ResourceSamples []ResourceSample `json:"resource_samples,omitempty"`
+
+	// Phases is the fault-injection profile's per-phase breakdown (before,
+	// during, after), so a reader can see what each phase answered; Metrics
+	// above aggregates all three and cannot tell "recovered" from "still
+	// refusing" (#57).
+	Phases []Phase `json:"phases,omitempty"`
+}
+
+// Phase is one named phase of a multi-phase run and its own snapshot.
+type Phase struct {
+	Name    string           `json:"name"`
+	Metrics metrics.Snapshot `json:"metrics"`
 }
 
 // ResourceSample is one out-of-band reading of a target metric.

@@ -1,0 +1,9 @@
+name: recovered-status-on-sustained
+profile:
+  type: sustained
+  concurrency: 2
+  duration: 1s
+slos:
+  recovered_status:
+    status: 200
+    min_fraction: 0.5

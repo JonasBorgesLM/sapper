@@ -71,6 +71,25 @@ func Recovery(before, after metrics.Snapshot, factor float64) model.SLOResult {
 	}
 }
 
+// RecoveredStatus evaluates the fault-injection profile's recovered_status
+// SLO (#57): at least rs.MinFraction of the after-phase's requests answered
+// rs.Status. Unlike Recovery, which compares latency and so passes for a
+// breaker stuck open (its local refusals are fast), this asks whether the
+// target is actually serving again. An after-phase with no requests fails:
+// a check that could not run has not passed.
+func RecoveredStatus(after metrics.Snapshot, rs scenario.RecoveredStatus) model.SLOResult {
+	seen := after.StatusCounts[rs.Status]
+	fraction := 0.0
+	if after.Total > 0 {
+		fraction = float64(seen) / float64(after.Total)
+	}
+	return model.SLOResult{
+		Name:   "recovered_status",
+		Passed: after.Total > 0 && fraction >= rs.MinFraction,
+		Detail: fmt.Sprintf("after the fault, %d of %d requests (%.1f%%) answered %d; want ≥ %.1f%%", seen, after.Total, fraction*100, rs.Status, rs.MinFraction*100),
+	}
+}
+
 // Degradation evaluates the soak profile's SLO: the last measurement window's
 // p99 must be within factor× the first window's, so slow degradation over a long
 // run (a leak, a growing queue) is caught. Like Recovery it compares two phases.
