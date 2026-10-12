@@ -166,6 +166,37 @@ func TestLoadFaultInjection(t *testing.T) {
 	if s.SLOs.RecoveryWithin == nil || *s.SLOs.RecoveryWithin != 1.5 {
 		t.Errorf("RecoveryWithin = %v, want 1.5", s.SLOs.RecoveryWithin)
 	}
+	if rs := s.SLOs.RecoveredStatus; rs == nil || rs.Status != 200 || rs.MinFraction != 0.5 {
+		t.Errorf("RecoveredStatus = %+v, want {200 0.5}", rs)
+	}
+}
+
+// TestLoadRecoveredStatusRejectedOutsideFaultInjection: only fault-injection
+// has an after-phase, so elsewhere the SLO is refused at load rather than
+// silently never evaluated — an SLO that never runs reads as green (#57).
+//
+// Negative control: with the profile check removed from validate, this test
+// failed — the sustained scenario loaded with the SLO in it. Verified by hand,
+// restored before committing.
+func TestLoadRecoveredStatusRejectedOutsideFaultInjection(t *testing.T) {
+	_, err := Load("testdata/recovered-status-on-sustained.yaml")
+	if err == nil || !strings.Contains(err.Error(), "recovered_status applies only to") {
+		t.Fatalf("Load() error = %v, want it to refuse recovered_status on a sustained profile", err)
+	}
+}
+
+// TestLoadRecoveredStatusRejectsOutOfRangeValues: a status that is not an
+// HTTP code, and a fraction outside (0, 1], are both refused at load.
+func TestLoadRecoveredStatusRejectsOutOfRangeValues(t *testing.T) {
+	_, err := Load("testdata/fault-injection-bad-recovered-status.yaml")
+	if err == nil {
+		t.Fatal("Load() accepted status 2000 and min_fraction 1.5")
+	}
+	for _, want := range []string{"must be an HTTP status code", "min_fraction must be in (0, 1]"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Load() error = %v, want it to mention %q", err, want)
+		}
+	}
 }
 
 // TestLoadFaultInjectionRequiresUpstream is ADR-0009's own "wiring mistake

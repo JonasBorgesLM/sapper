@@ -337,6 +337,13 @@ func executeFaultInjection(ctx context.Context, cfg *config.Config, sc *scenario
 			verdict.Passed = false
 		}
 	}
+	if sc.SLOs.RecoveredStatus != nil {
+		rec := assert.RecoveredStatus(after, *sc.SLOs.RecoveredStatus)
+		verdict.Results = append(verdict.Results, rec)
+		if !rec.Passed {
+			verdict.Passed = false
+		}
+	}
 	verdict = assert.WithAbort(verdict, guard.Stopped(), guard.Reason())
 
 	return model.Result{
@@ -349,6 +356,11 @@ func executeFaultInjection(ctx context.Context, cfg *config.Config, sc *scenario
 		AbortReason: guard.Reason(),
 		Metrics:     agg,
 		Verdict:     verdict,
+		Phases: []model.Phase{
+			{Name: "before", Metrics: before},
+			{Name: "during", Metrics: duringSnap},
+			{Name: "after", Metrics: after},
+		},
 	}, nil
 }
 

@@ -19,7 +19,7 @@ New records start from [`TEMPLATE.md`](TEMPLATE.md).
 | [`0006`](0006-reuse-from-warden.md) | Reuse Warden's config style, OpenAPI import, and JSON pipeline | Accepted | — |
 | [`0007`](0007-fault-injection-approach.md) | Build a minimal in-process fault proxy, not integrate toxiproxy | Accepted | — |
 | [`0008`](0008-minimal-openapi-parser.md) | Parse OpenAPI minimally with the YAML library, not kin-openapi | Accepted | — |
-| [`0009`](0009-fault-injection-cli-scenario.md) | Fault injection is a scenario profile, reusing Spike's shape and existing SLOs | Accepted | — |
+| [`0009`](0009-fault-injection-cli-scenario.md) | Fault injection is a scenario profile, reusing Spike's shape and existing SLOs | Accepted | `#57` |
 
 ## Reopening criteria on the record
 

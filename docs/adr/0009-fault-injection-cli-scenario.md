@@ -90,3 +90,28 @@ This closes ADR-0004's reopening criterion point (2) in full: the reserved
 port survived contact, driven now through the same `run`/`assert`/`report`
 pipeline every other case uses, with no reshaping of the generator or
 result model ADR-0004 itself predicted.
+
+## Amendment (#57)
+This ADR's decision to reuse Spike's existing SLOs left the profile unable to
+fail on the failure Case 4 exists for. A target whose breaker opens and **never
+closes again** passed both: `status_seen` as soon as the circuit opened, and
+`recovery_within` because a stuck circuit's local refusals are fast, which
+lowers the after-phase p99. Found from usher (usher#145), whose live runs also
+measured `recovery_within` at a ms-scale baseline swinging 0.63–1.92× from
+environment noise alone.
+
+The profile now has one SLO of its own, `recovered_status: {status,
+min_fraction}`: at least `min_fraction` of the **after-phase**'s requests
+answered `status`. It is a fraction rather than "all" because the after-phase
+starts while the target's breaker may still be open, until its own open
+timeout. An after-phase with no requests fails: a check that could not run has
+not passed. The SLO is refused at load on any other profile rather than
+silently never evaluated.
+
+The result now carries `phases` (before, during, after), so a reader can see
+what each phase answered instead of only the aggregate that could not tell
+"recovered" from "still refusing".
+
+`status_seen` and `recovery_within` stay: the first proves the circuit opened,
+and the second still catches a gross post-fault slowdown. Neither proves
+recovery; `recovered_status` does.

@@ -47,10 +47,72 @@ func TestExecuteFaultInjectionBreakerOpensAndRecovers(t *testing.T) {
 
 	listen := freePort(t)
 
-	// The target under test: a minimal breaker in front of a call to its
-	// dependency, routed through whatever sits at `listen` — exactly the
-	// shape ADR-0007 describes an operator arranging for their own target.
-	br := &testBreaker{threshold: 2, cooldown: 60 * time.Millisecond}
+	target := breakerTarget(t, listen, &testBreaker{threshold: 2, cooldown: 60 * time.Millisecond})
+
+	cfg := &config.Config{
+		SchemaVersion: 1,
+		Target:        config.Target{BaseURL: target.URL, Tier: model.TierLab},
+		BlastRadius:   config.BlastRadius{MaxConcurrency: 20, MaxDuration: config.Duration(time.Minute)},
+	}
+	statusSeen := 503
+	recovery := 5.0
+	recovered := scenario.RecoveredStatus{Status: 200, MinFraction: 0.5}
+	sc := &scenario.Scenario{
+		Name: "fault-injection-breaker",
+		Profile: scenario.Profile{
+			Type:                scenario.ProfileFaultInjection,
+			BaselineConcurrency: 2,
+			BaselineDuration:    scenario.Duration(300 * time.Millisecond), // the after-phase must outlast the 60 ms cooldown for recovered_status
+			Concurrency:         4,
+			Duration:            scenario.Duration(100 * time.Millisecond),
+			Upstream:            dependency.URL,
+			Listen:              listen,
+			FaultKind:           "error",
+			FaultStatus:         503,
+		},
+		SLOs: scenario.SLOs{StatusSeen: &statusSeen, RecoveryWithin: &recovery, RecoveredStatus: &recovered},
+	}
+
+	res, err := executeRun(context.Background(), cfg, sc, 1, nil)
+	if err != nil {
+		t.Fatalf("executeRun() error = %v", err)
+	}
+	if res.Profile != scenario.ProfileFaultInjection {
+		t.Errorf("Profile = %q, want %q", res.Profile, scenario.ProfileFaultInjection)
+	}
+	var sawStatusSeen, sawRecovery, sawRecovered bool
+	for _, r := range res.Verdict.Results {
+		switch r.Name {
+		case "status_seen":
+			sawStatusSeen = true
+		case "recovery_within":
+			sawRecovery = true
+		case "recovered_status":
+			sawRecovered = true
+		}
+	}
+	if !sawRecovered {
+		t.Error("verdict has no recovered_status result")
+	}
+	if len(res.Phases) != 3 || res.Phases[0].Name != "before" || res.Phases[2].Name != "after" {
+		t.Errorf("Phases = %+v, want before/during/after", res.Phases)
+	}
+	if !sawStatusSeen {
+		t.Error("verdict has no status_seen result")
+	}
+	if !sawRecovery {
+		t.Error("verdict has no recovery_within result")
+	}
+	if !res.Verdict.Passed {
+		t.Errorf("verdict failed: %+v", res.Verdict.Results)
+	}
+}
+
+// breakerTarget is the target under test: a minimal breaker in front of a
+// call to its dependency, routed through whatever sits at listen — exactly
+// the shape ADR-0007 describes an operator arranging for their own target.
+func breakerTarget(t *testing.T, listen string, br *testBreaker) *httptest.Server {
+	t.Helper()
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		err := br.call(func() error {
 			resp, err := http.Get("http://" + listen)
@@ -72,7 +134,27 @@ func TestExecuteFaultInjectionBreakerOpensAndRecovers(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		}
 	}))
-	defer target.Close()
+	t.Cleanup(target.Close)
+	return target
+}
+
+// TestExecuteFaultInjectionStuckBreakerFailsRecoveredStatus is #57: a target
+// whose breaker opens and never closes again must fail the run. It passes
+// the other two SLOs — status_seen because the circuit did open, and
+// recovery_within because its fast local refusals lower the after-phase p99
+// — which is exactly why recovered_status exists.
+//
+// Negative control: with the recovered_status evaluation removed from
+// executeFaultInjection, this test failed — the verdict was green for a
+// target that never served again. Verified by hand, restored before
+// committing.
+func TestExecuteFaultInjectionStuckBreakerFailsRecoveredStatus(t *testing.T) {
+	dependency := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer dependency.Close()
+	listen := freePort(t)
+	target := breakerTarget(t, listen, &testBreaker{threshold: 2, cooldown: time.Hour})
 
 	cfg := &config.Config{
 		SchemaVersion: 1,
@@ -81,8 +163,9 @@ func TestExecuteFaultInjectionBreakerOpensAndRecovers(t *testing.T) {
 	}
 	statusSeen := 503
 	recovery := 5.0
+	recovered := scenario.RecoveredStatus{Status: 200, MinFraction: 0.5}
 	sc := &scenario.Scenario{
-		Name: "fault-injection-breaker",
+		Name: "fault-injection-stuck-breaker",
 		Profile: scenario.Profile{
 			Type:                scenario.ProfileFaultInjection,
 			BaselineConcurrency: 2,
@@ -94,33 +177,25 @@ func TestExecuteFaultInjectionBreakerOpensAndRecovers(t *testing.T) {
 			FaultKind:           "error",
 			FaultStatus:         503,
 		},
-		SLOs: scenario.SLOs{StatusSeen: &statusSeen, RecoveryWithin: &recovery},
+		SLOs: scenario.SLOs{StatusSeen: &statusSeen, RecoveryWithin: &recovery, RecoveredStatus: &recovered},
 	}
 
 	res, err := executeRun(context.Background(), cfg, sc, 1, nil)
 	if err != nil {
 		t.Fatalf("executeRun() error = %v", err)
 	}
-	if res.Profile != scenario.ProfileFaultInjection {
-		t.Errorf("Profile = %q, want %q", res.Profile, scenario.ProfileFaultInjection)
+	if res.Verdict.Passed {
+		t.Fatalf("verdict passed for a breaker that never closed: %+v", res.Verdict.Results)
 	}
-	var sawStatusSeen, sawRecovery bool
+	got := map[string]bool{}
 	for _, r := range res.Verdict.Results {
-		switch r.Name {
-		case "status_seen":
-			sawStatusSeen = true
-		case "recovery_within":
-			sawRecovery = true
-		}
+		got[r.Name] = r.Passed
 	}
-	if !sawStatusSeen {
-		t.Error("verdict has no status_seen result")
+	if got["recovered_status"] {
+		t.Error("recovered_status passed for an after-phase that never answered 200")
 	}
-	if !sawRecovery {
-		t.Error("verdict has no recovery_within result")
-	}
-	if !res.Verdict.Passed {
-		t.Errorf("verdict failed: %+v", res.Verdict.Results)
+	if !got["status_seen"] || !got["recovery_within"] {
+		t.Errorf("status_seen/recovery_within = %v/%v, want both to pass here — the gap recovered_status closes", got["status_seen"], got["recovery_within"])
 	}
 }
 

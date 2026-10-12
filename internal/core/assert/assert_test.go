@@ -107,3 +107,29 @@ func TestWithAbortForcesVerdictRed(t *testing.T) {
 		t.Errorf("aborted verdict missing a failed run_completed result: %+v", aborted.Results)
 	}
 }
+
+// TestRecoveredStatus is #57: the fraction of the after-phase answering the
+// recovered status, compared against the minimum. A phase that recorded no
+// requests fails, because a check that could not run has not passed.
+func TestRecoveredStatus(t *testing.T) {
+	rs := scenario.RecoveredStatus{Status: 200, MinFraction: 0.5}
+	cases := []struct {
+		name  string
+		after metrics.Snapshot
+		want  bool
+	}{
+		{"mostly recovered", metrics.Snapshot{Total: 100, StatusCounts: map[int]int{200: 60, 503: 40}}, true},
+		{"exactly the minimum", metrics.Snapshot{Total: 100, StatusCounts: map[int]int{200: 50, 503: 50}}, true},
+		{"still mostly refusing", metrics.Snapshot{Total: 100, StatusCounts: map[int]int{200: 40, 503: 60}}, false},
+		{"stuck open: all refusals", metrics.Snapshot{Total: 100, StatusCounts: map[int]int{503: 100}}, false},
+		{"no requests at all", metrics.Snapshot{}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := RecoveredStatus(tc.after, rs)
+			if got.Name != "recovered_status" || got.Passed != tc.want {
+				t.Errorf("RecoveredStatus() = %+v, want Passed=%v", got, tc.want)
+			}
+		})
+	}
+}

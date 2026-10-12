@@ -99,11 +99,25 @@ type SLOs struct {
 	RecoveryWithin *float64 `yaml:"recovery_within"`
 	// Soak-only: the last window's p99 must be within this factor of the first.
 	DegradationUnder *float64 `yaml:"degradation_under"`
+	// Fault-injection-only (#57): at least MinFraction of the after-phase's
+	// requests answered Status. The only SLO here that a breaker stuck open
+	// fails: status_seen passes as soon as it opens, and recovery_within
+	// passes too, since a stuck circuit's fast local refusals lower the
+	// after-phase p99.
+	RecoveredStatus *RecoveredStatus `yaml:"recovered_status"`
+}
+
+// RecoveredStatus is the recovered_status SLO's two parameters. MinFraction
+// is a fraction rather than "all", because the after-phase starts while the
+// target's breaker may still be open, until its own open timeout.
+type RecoveredStatus struct {
+	Status      int     `yaml:"status"`
+	MinFraction float64 `yaml:"min_fraction"`
 }
 
 // Empty reports whether no SLO was declared.
 func (s SLOs) Empty() bool {
-	return s.P99Under == nil && s.ErrorRateUnder == nil && s.StatusSeen == nil && s.RecoveryWithin == nil && s.DegradationUnder == nil
+	return s.P99Under == nil && s.ErrorRateUnder == nil && s.StatusSeen == nil && s.RecoveryWithin == nil && s.DegradationUnder == nil && s.RecoveredStatus == nil
 }
 
 // Duration unmarshals a YAML duration string like "30s".
@@ -233,6 +247,19 @@ func (s *Scenario) validate() error {
 	}
 	if s.Request.Path != "" && !strings.HasPrefix(s.Request.Path, "/") {
 		errs = append(errs, fmt.Errorf("request.path must start with '/', got %q", s.Request.Path))
+	}
+	if rs := s.SLOs.RecoveredStatus; rs != nil {
+		// Refused, not ignored, elsewhere: only the fault-injection profile has
+		// an after-phase, and an SLO that silently never runs reads as green.
+		if s.Profile.Type != ProfileFaultInjection {
+			errs = append(errs, fmt.Errorf("slos.recovered_status applies only to profile.type %q, not %q", ProfileFaultInjection, s.Profile.Type))
+		}
+		if rs.Status < 100 || rs.Status > 599 {
+			errs = append(errs, fmt.Errorf("slos.recovered_status.status must be an HTTP status code, got %d", rs.Status))
+		}
+		if rs.MinFraction <= 0 || rs.MinFraction > 1 {
+			errs = append(errs, fmt.Errorf("slos.recovered_status.min_fraction must be in (0, 1], got %v", rs.MinFraction))
+		}
 	}
 	if s.SLOs.Empty() {
 		errs = append(errs, errors.New("at least one SLO is required; a run with no SLO is a misconfiguration, not a benchmark (ADR-0001)"))
