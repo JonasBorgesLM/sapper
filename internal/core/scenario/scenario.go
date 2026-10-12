@@ -110,6 +110,13 @@ type SLOs struct {
 // RecoveredStatus is the recovered_status SLO's two parameters. MinFraction
 // is a fraction rather than "all", because the after-phase starts while the
 // target's breaker may still be open, until its own open timeout.
+//
+// The fraction is of REQUESTS, not of time (#59). A target's refusals while
+// its breaker is still open are usually much faster than real answers, so the
+// load generator fires more requests during that stretch and over-counts
+// them: usher measured 54.9-58.3% by request for an after-phase ~75% healthy
+// by time. Set MinFraction with that margin in mind; a breaker stuck open
+// still scores 0%.
 type RecoveredStatus struct {
 	Status      int     `yaml:"status"`
 	MinFraction float64 `yaml:"min_fraction"`

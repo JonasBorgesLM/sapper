@@ -25,6 +25,7 @@ request:
 slos:
   status_seen: 503        # the breaker's own fast-fail status, seen during the fault
   recovered_status:       # the target serves again after the fault: the only SLO
-    status: 200           # a breaker stuck open fails (#57); a fraction, because
-    min_fraction: 0.5     # the after-phase starts while the breaker may still be open
+    status: 200           # a breaker stuck open fails (#57). A fraction OF REQUESTS
+    min_fraction: 0.2     # (#59): the breaker's fast refusals early in the after-phase
+                          # are over-counted, so leave margin below the time-healthy share
   recovery_within: 1.5    # post-fault p99 <= pre-fault p99 x 1.5 (latency only)

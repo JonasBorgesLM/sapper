@@ -115,3 +115,20 @@ what each phase answered instead of only the aggregate that could not tell
 `status_seen` and `recovery_within` stay: the first proves the circuit opened,
 and the second still catches a gross post-fault slowdown. Neither proves
 recovery; `recovered_status` does.
+
+## Amendment (#59)
+`recovered_status`'s fraction is of **requests**, not of time, and that is now
+stated wherever the SLO is described: the `RecoveredStatus` doc, its result
+detail, the README table and the example scenario. A target's refusals while
+its breaker is still open are usually much faster than real answers, so the
+load generator fires more requests during that stretch and over-counts them.
+usher measured an after-phase ~75% healthy by time scoring 54.9–58.3% by
+request across five runs, and moved its own `min_fraction` from 0.5 to 0.2.
+
+A time-weighted fraction was the alternative: the share of the after-phase's
+time windows in which the status dominates. It would match the intuitive
+meaning, but it needs the after-phase windowed and a second definition of
+"dominates", for a gap that documentation closes. The SLO's purpose, failing a
+breaker stuck open, which scores 0% either way, is unaffected. Reopen if a
+scenario needs to assert *how fast* recovery happened rather than *whether* it
+did.
