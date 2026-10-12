@@ -86,7 +86,7 @@ func RecoveredStatus(after metrics.Snapshot, rs scenario.RecoveredStatus) model.
 	return model.SLOResult{
 		Name:   "recovered_status",
 		Passed: after.Total > 0 && fraction >= rs.MinFraction,
-		Detail: fmt.Sprintf("after the fault, %d of %d requests (%.1f%%) answered %d; want ≥ %.1f%%", seen, after.Total, fraction*100, rs.Status, rs.MinFraction*100),
+		Detail: fmt.Sprintf("after the fault, %d of %d requests (%.1f%% by request, not time) answered %d; want ≥ %.1f%%", seen, after.Total, fraction*100, rs.Status, rs.MinFraction*100),
 	}
 }
 

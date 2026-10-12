@@ -91,7 +91,7 @@ The shipped [`scenarios/`](scenarios/) cover each load shape:
 | [`ramp-up.yaml`](scenarios/ramp-up.yaml) | rising to a peak | `status_seen` (the limiter's 429) |
 | [`spike.yaml`](scenarios/spike.yaml) | baseline → peak → baseline | `recovery_within` (p99 returns to baseline) |
 | [`soak.yaml`](scenarios/soak.yaml) | long, windowed | `degradation_under` (no slow drift) |
-| [`fault-injection.yaml`](scenarios/fault-injection.yaml) | baseline → faulted → recovery | `status_seen` (the breaker's own fast-fail), `recovered_status` (the target serves again), `recovery_within` |
+| [`fault-injection.yaml`](scenarios/fault-injection.yaml) | baseline → faulted → recovery | `status_seen` (the breaker's own fast-fail), `recovered_status` (the target serves again; a fraction of requests, not time), `recovery_within` |
 
 The safety config is separate from the scenario, so one config guards many
 scenarios — see [`configs/sapper.example.yaml`](configs/sapper.example.yaml) for
