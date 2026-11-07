@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/JonasBorgesLM/sapper/internal/adapters/config"
@@ -127,15 +128,25 @@ func executeRun(ctx context.Context, cfg *config.Config, sc *scenario.Scenario, 
 			return model.Result{}, fmt.Errorf("run: %s %s is not declared in the OpenAPI spec %s", method, path, cfg.Target.OpenAPISpec)
 		}
 	}
-	targetURL := strings.TrimSuffix(cfg.Target.BaseURL, "/") + path
-	headers := sc.Request.Headers // FR-10: static per-request headers
+	baseURL := strings.TrimSuffix(cfg.Target.BaseURL, "/")
+	headers := sc.Request.Headers // FR-10: headers, with {{...}} filled per request
+	body := sc.Request.Body
+	var seq atomic.Uint64 // shared by every worker and phase of the run
 	newReq := func(rctx context.Context) (*http.Request, error) {
-		req, err := http.NewRequestWithContext(rctx, method, targetURL, nil)
+		vars := scenario.Vars{UUID: scenario.NewUUID(), Seq: seq.Add(1)}
+		var reader io.Reader
+		if body != nil {
+			reader = strings.NewReader(scenario.Render(body.Text, vars))
+		}
+		req, err := http.NewRequestWithContext(rctx, method, baseURL+scenario.Render(path, vars), reader)
 		if err != nil {
 			return nil, err
 		}
 		for k, v := range headers {
-			req.Header.Set(k, v)
+			req.Header.Set(k, scenario.Render(v, vars))
+		}
+		if body != nil && body.JSON && req.Header.Get("Content-Type") == "" {
+			req.Header.Set("Content-Type", "application/json")
 		}
 		return req, nil
 	}

@@ -20,6 +20,7 @@ New records start from [`TEMPLATE.md`](TEMPLATE.md).
 | [`0007`](0007-fault-injection-approach.md) | Build a minimal in-process fault proxy, not integrate toxiproxy | Accepted | — |
 | [`0008`](0008-minimal-openapi-parser.md) | Parse OpenAPI minimally with the YAML library, not kin-openapi | Accepted | — |
 | [`0009`](0009-fault-injection-cli-scenario.md) | Fault injection is a scenario profile, reusing Spike's shape and existing SLOs | Accepted | `#57` |
+| [`0010`](0010-request-body-and-per-request-variables.md) | Requests may carry a body with per-request variables; statuses are asserted by absence and fraction | Accepted | — |
 
 ## Reopening criteria on the record
 
@@ -28,6 +29,7 @@ New records start from [`TEMPLATE.md`](TEMPLATE.md).
 | `0007` | A scenario needs a fault type the minimal proxy cannot express (bandwidth, slicer, partial writes) — integrate toxiproxy then |
 | `0008` | A scenario needs request bodies generated from schemas, or a spec using `$ref` indirection — adopt kin-openapi then |
 | `0003` | A metrics histogram dependency is chosen — record it in its own ADR |
+| `0010` | A scenario needs a value the two request variables cannot give (a pool of ids, a random choice, an amount distribution) |
 | `0009` | A scenario needs the faulted phase's own load to differ from the baseline's — the schema reused Spike's pair as-is, deliberately, for as long as they stay equal |
 
 ## Open questions

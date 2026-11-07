@@ -8,6 +8,7 @@
 package scenario
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -49,6 +50,11 @@ type Request struct {
 	// time like the safety config's secrets, so a real credential is never
 	// committed in the scenario file itself.
 	Headers map[string]string `yaml:"headers"`
+	// Body is sent on every request. A YAML map or list is sent as JSON (and
+	// Content-Type defaults to application/json); a string is sent as written.
+	// It may contain {{uuid}} and {{seq}}, filled in per request (ADR-0010).
+	// Unlike headers it is not env-expanded: it is test data, not a credential.
+	Body *Body `yaml:"body"`
 }
 
 // Profile is the load shape and its parameters.
@@ -105,6 +111,14 @@ type SLOs struct {
 	// passes too, since a stuck circuit's fast local refusals lower the
 	// after-phase p99.
 	RecoveredStatus *RecoveredStatus `yaml:"recovered_status"`
+	// StatusAbsent: no response may answer this status (e.g. 500). Fails when
+	// no response was recorded at all, since an absence nobody could have
+	// observed is not a pass (ADR-0010).
+	StatusAbsent *int `yaml:"status_absent"`
+	// StatusFractionUnder: responses answering Status must stay a smaller
+	// fraction than Fraction (e.g. 503 below 5%): shedding load is allowed,
+	// shedding most of it is not.
+	StatusFractionUnder *StatusFraction `yaml:"status_fraction_under"`
 }
 
 // RecoveredStatus is the recovered_status SLO's two parameters. MinFraction
@@ -122,9 +136,49 @@ type RecoveredStatus struct {
 	MinFraction float64 `yaml:"min_fraction"`
 }
 
+// Body is a request body as written in a scenario.
+type Body struct {
+	// Text is the body as sent, before {{...}} substitution.
+	Text string
+	// JSON reports the body was written as a YAML map or list and so was
+	// encoded as JSON, which is what decides the default Content-Type.
+	JSON bool
+}
+
+// UnmarshalYAML accepts a string as written, or any other YAML value encoded as
+// JSON.
+func (b *Body) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode && value.Tag == "!!str" {
+		b.Text = value.Value
+		return nil
+	}
+	if value.Kind != yaml.MappingNode && value.Kind != yaml.SequenceNode {
+		return fmt.Errorf("body must be a string, a map or a list, got %s", value.Tag)
+	}
+	var v any
+	if err := value.Decode(&v); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Errorf("body cannot be encoded as JSON: %w", err)
+	}
+	b.Text, b.JSON = string(raw), true
+	return nil
+}
+
+// StatusFraction is the status_fraction_under SLO's two parameters: responses
+// answering Status must be a smaller fraction than Fraction of all responses.
+// Transport failures have no status and are not in the denominator; they are
+// what error_rate_under is for.
+type StatusFraction struct {
+	Status   int     `yaml:"status"`
+	Fraction float64 `yaml:"fraction"`
+}
+
 // Empty reports whether no SLO was declared.
 func (s SLOs) Empty() bool {
-	return s.P99Under == nil && s.ErrorRateUnder == nil && s.StatusSeen == nil && s.RecoveryWithin == nil && s.DegradationUnder == nil && s.RecoveredStatus == nil
+	return s.P99Under == nil && s.ErrorRateUnder == nil && s.StatusSeen == nil && s.RecoveryWithin == nil && s.DegradationUnder == nil && s.RecoveredStatus == nil && s.StatusAbsent == nil && s.StatusFractionUnder == nil
 }
 
 // Duration unmarshals a YAML duration string like "30s".
@@ -267,6 +321,24 @@ func (s *Scenario) validate() error {
 		if rs.MinFraction <= 0 || rs.MinFraction > 1 {
 			errs = append(errs, fmt.Errorf("slos.recovered_status.min_fraction must be in (0, 1], got %v", rs.MinFraction))
 		}
+	}
+	if c := s.SLOs.StatusAbsent; c != nil && (*c < 100 || *c > 599) {
+		errs = append(errs, fmt.Errorf("slos.status_absent must be an HTTP status code, got %d", *c))
+	}
+	if f := s.SLOs.StatusFractionUnder; f != nil {
+		if f.Status < 100 || f.Status > 599 {
+			errs = append(errs, fmt.Errorf("slos.status_fraction_under.status must be an HTTP status code, got %d", f.Status))
+		}
+		if f.Fraction <= 0 || f.Fraction > 1 {
+			errs = append(errs, fmt.Errorf("slos.status_fraction_under.fraction must be in (0, 1], got %v", f.Fraction))
+		}
+	}
+	errs = append(errs, checkPlaceholders("request.path", s.Request.Path)...)
+	for k, v := range s.Request.Headers {
+		errs = append(errs, checkPlaceholders("request.headers["+k+"]", v)...)
+	}
+	if s.Request.Body != nil {
+		errs = append(errs, checkPlaceholders("request.body", s.Request.Body.Text)...)
 	}
 	if s.SLOs.Empty() {
 		errs = append(errs, errors.New("at least one SLO is required; a run with no SLO is a misconfiguration, not a benchmark (ADR-0001)"))

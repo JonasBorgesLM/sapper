@@ -49,6 +49,13 @@ func Evaluate(agg metrics.Aggregation, slos scenario.SLOs) model.Verdict {
 		})
 	}
 
+	if slos.StatusAbsent != nil {
+		results = append(results, statusAbsent(agg, *slos.StatusAbsent))
+	}
+	if slos.StatusFractionUnder != nil {
+		results = append(results, statusFractionUnder(agg, *slos.StatusFractionUnder))
+	}
+
 	verdict := model.Verdict{Passed: true, Results: results}
 	for _, r := range results {
 		if !r.Passed {
@@ -56,6 +63,42 @@ func Evaluate(agg metrics.Aggregation, slos scenario.SLOs) model.Verdict {
 		}
 	}
 	return verdict
+}
+
+// responses is the number of requests that got an HTTP response; the
+// denominator of the status SLOs, which say nothing about transport failures.
+func responses(agg metrics.Aggregation) int {
+	n := 0
+	for _, c := range agg.StatusCounts {
+		n += c
+	}
+	return n
+}
+
+// statusAbsent: no response answered code. With no responses at all it fails —
+// "no 500 seen" is vacuously true of a run that never reached the target.
+func statusAbsent(agg metrics.Aggregation, code int) model.SLOResult {
+	total, seen := responses(agg), agg.StatusCounts[code]
+	return model.SLOResult{
+		Name:   "status_absent",
+		Passed: total > 0 && seen == 0,
+		Detail: fmt.Sprintf("status %d observed %d times in %d responses across %d runs (want 0)", code, seen, total, agg.Runs),
+	}
+}
+
+// statusFractionUnder: responses answering f.Status are strictly under
+// f.Fraction of all responses. It fails with no responses, as statusAbsent does.
+func statusFractionUnder(agg metrics.Aggregation, f scenario.StatusFraction) model.SLOResult {
+	total, seen := responses(agg), agg.StatusCounts[f.Status]
+	fraction := 0.0
+	if total > 0 {
+		fraction = float64(seen) / float64(total)
+	}
+	return model.SLOResult{
+		Name:   "status_fraction_under",
+		Passed: total > 0 && fraction < f.Fraction,
+		Detail: fmt.Sprintf("status %d was %d of %d responses (%.2f%%) across %d runs vs < %.2f%%", f.Status, seen, total, fraction*100, agg.Runs, f.Fraction*100),
+	}
 }
 
 // Recovery evaluates the spike profile's recovery SLO: after the spike, the p99

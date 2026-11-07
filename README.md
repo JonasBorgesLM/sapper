@@ -93,6 +93,14 @@ The shipped [`scenarios/`](scenarios/) cover each load shape:
 | [`soak.yaml`](scenarios/soak.yaml) | long, windowed | `degradation_under` (no slow drift) |
 | [`fault-injection.yaml`](scenarios/fault-injection.yaml) | baseline → faulted → recovery | `status_seen` (the breaker's own fast-fail), `recovered_status` (the target serves again; a fraction of requests, not time), `recovery_within` |
 
+A scenario's `request` may also carry a `body` (a YAML map is sent as JSON) and
+the per-request variables `{{uuid}}` and `{{seq}}` in the path, header values and
+body, so a write endpoint gets a distinct id or idempotency key on every request
+([`write-endpoint.yaml`](scenarios/write-endpoint.yaml), ADR-0010). Two SLOs
+assert on statuses: `status_absent` (e.g. never a 500) and
+`status_fraction_under` (e.g. 503 under 5% of responses); both fail if the run
+got no response at all.
+
 The safety config is separate from the scenario, so one config guards many
 scenarios — see [`configs/sapper.example.yaml`](configs/sapper.example.yaml) for
 the full contract (tier, mandatory caps, auto-abort, optional auth and OpenAPI
