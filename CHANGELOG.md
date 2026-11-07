@@ -9,6 +9,12 @@ First working version. Sapper applies sustained adversarial load, and controlled
 fault injection, to an authorized target and asserts the observed behaviour
 against SLOs declared in the scenario — a green/red verdict, gateable in CI.
 
+### Security
+- **Build toolchain on Go 1.27.3** — GO-2026-6809 (`crypto/x509`), fixed in 1.27.3;
+  `govulncheck` flagged 1.27.2 in CI. The bump keeps `go install` builds and CI
+  on a fixed standard library. Whether Sapper reaches the vulnerable path was
+  not investigated.
+
 ### Added
 - **Request headers (FR-10)** — a scenario's `request` may declare static
   headers, sent unchanged on every request; the only way to reach a target
