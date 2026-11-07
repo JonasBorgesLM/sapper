@@ -32,10 +32,10 @@ env:
   # The build toolchain (go.mod's `toolchain`). govulncheck scans it: it is what
   # a `go install` of Sapper compiles with. setup-go's "stable" was not used for
   # this any more -- it lagged go1.27.2 by hours after GO-2026-6617 shipped.
-  TOOLCHAIN_VERSION: "1.27.2"
+  TOOLCHAIN_VERSION: "1.27.3"
   # golangci-lint typechecks against the stdlib of the toolchain it was built
   # with and refuses a newer one. This pin and LINT_VERSION move together.
-  LINT_GO_VERSION: "1.27.2"
+  LINT_GO_VERSION: "1.27.3"
   LINT_VERSION: "v2.14.0"
   # A commit, not a tag: no gosec release yet reads Go 1.27 export data
   # (v2.28.0 and v2.29.0 fail with "export data version 5 is greater than
