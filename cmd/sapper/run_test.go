@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"sync"
 	"testing"
 	"time"
@@ -137,3 +139,72 @@ func TestExecuteRunRejectsConcurrencyOverCap(t *testing.T) {
 		t.Fatal("executeRun ran with concurrency 50 over a cap of 5 (M3)")
 	}
 }
+
+// ADR-0010: a write endpoint needs a distinct id per request. Every request
+// must carry the configured JSON body with its own {{uuid}} and {{seq}}, the
+// same uuid everywhere within one request, and a default Content-Type.
+func TestExecuteRunRendersBodyPerRequest(t *testing.T) {
+	type seen struct{ key, body, ctype, path string }
+	var mu sync.Mutex
+	var got []seen
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		got = append(got, seen{r.Header.Get("Idempotency-Key"), string(b), r.Header.Get("Content-Type"), r.URL.Path})
+		mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		SchemaVersion: 1,
+		Target:        config.Target{BaseURL: srv.URL, Tier: model.TierLab},
+		BlastRadius:   config.BlastRadius{MaxConcurrency: 5, MaxDuration: config.Duration(time.Minute)},
+	}
+	sc := &scenario.Scenario{
+		Name:    "body",
+		Profile: scenario.Profile{Type: "sustained", Concurrency: 3, Duration: scenario.Duration(50 * time.Millisecond)},
+		Request: scenario.Request{
+			Method:  "POST",
+			Path:    "/bets/{{seq}}",
+			Headers: map[string]string{"Idempotency-Key": "key-{{uuid}}"},
+			Body:    &scenario.Body{Text: `{"id":"{{uuid}}","n":"{{seq}}"}`, JSON: true},
+		},
+		SLOs: scenario.SLOs{StatusAbsent: intp(500)},
+	}
+	res, err := executeRun(context.Background(), cfg, sc, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Verdict.Passed {
+		t.Fatalf("verdict failed: %+v", res.Verdict.Results)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) < 10 {
+		t.Fatalf("only %d requests reached the target", len(got))
+	}
+	uuids, seqs := map[string]bool{}, map[string]bool{}
+	re := regexp.MustCompile(`^\{"id":"([0-9a-f-]{36})","n":"(\d+)"\}$`)
+	for _, s := range got {
+		m := re.FindStringSubmatch(s.body)
+		if m == nil {
+			t.Fatalf("body %q not rendered", s.body)
+		}
+		if s.key != "key-"+m[1] {
+			t.Errorf("header uuid %q differs from body uuid %q within one request", s.key, m[1])
+		}
+		if s.path != "/bets/"+m[2] {
+			t.Errorf("path %q does not carry seq %s", s.path, m[2])
+		}
+		if s.ctype != "application/json" {
+			t.Errorf("Content-Type = %q", s.ctype)
+		}
+		uuids[m[1]], seqs[m[2]] = true, true
+	}
+	if len(uuids) != len(got) || len(seqs) != len(got) {
+		t.Errorf("%d requests but %d distinct uuids and %d distinct seqs", len(got), len(uuids), len(seqs))
+	}
+}
+
+func intp(i int) *int { return &i }

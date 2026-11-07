@@ -80,6 +80,15 @@ interactive (SR-02).
 - **FR-10** A scenario's `request` may declare static **headers** sent
   unchanged on every request (e.g. a bearer token). Sapper has no login flow
   of its own; this is how it reaches a target that requires auth.
+- **FR-11** A scenario's `request` may declare a **body** (a YAML map or list
+  sent as JSON, or a string sent as written), so a write endpoint can be loaded.
+  (ADR-0010.)
+- **FR-12** A scenario's path, header values and body may use the per-request
+  variables `{{uuid}}` and `{{seq}}`, so each request can be distinct (an id, an
+  idempotency key); an unknown variable fails the load. (ADR-0010.)
+- **FR-13** The SLOs `status_absent` (no response answers a given status) and
+  `status_fraction_under` (a status stays under a fraction of responses) assert
+  on statuses; both fail when the run recorded no response at all. (ADR-0010.)
 
 One sentence each. Anything needing a paragraph is two requirements or an ADR.
 

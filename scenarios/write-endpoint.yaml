@@ -1,0 +1,22 @@
+# A write endpoint, loaded with a distinct id and idempotency key per request
+# (FR-11, FR-12, ADR-0010). Without {{uuid}} every request would be the same
+# replay, and the run would measure the target's idempotency cache.
+name: write-endpoint
+profile:
+  type: sustained
+  concurrency: 10
+  duration: 30s
+  warmup: 5s
+request:
+  method: POST
+  path: /bets
+  headers:
+    Idempotency-Key: "{{uuid}}"
+  body:
+    id: "bet-{{uuid}}"
+    amount: "100"
+slos:
+  status_absent: 500            # no unhandled failure under load
+  status_fraction_under:        # shedding is allowed, shedding most of it is not
+    status: 503
+    fraction: 0.05

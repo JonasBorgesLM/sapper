@@ -133,3 +133,43 @@ func TestRecoveredStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestEvaluateStatusAbsent(t *testing.T) {
+	code := 500
+	clean := metrics.Aggregation{Runs: 1, StatusCounts: map[int]int{201: 90, 503: 10}}
+	if v := Evaluate(clean, scenario.SLOs{StatusAbsent: &code}); !v.Passed {
+		t.Errorf("status_absent failed with no 500: %+v", v.Results)
+	}
+	dirty := metrics.Aggregation{Runs: 1, StatusCounts: map[int]int{201: 90, 500: 1}}
+	if v := Evaluate(dirty, scenario.SLOs{StatusAbsent: &code}); v.Passed {
+		t.Error("status_absent passed with a 500 present")
+	}
+}
+
+// "No 500" is vacuously true of a run that never got a response; that must not
+// read as green.
+func TestEvaluateStatusAbsentFailsWithNoResponses(t *testing.T) {
+	code := 500
+	if v := Evaluate(metrics.Aggregation{Runs: 1}, scenario.SLOs{StatusAbsent: &code}); v.Passed {
+		t.Error("status_absent passed with zero responses")
+	}
+}
+
+func TestEvaluateStatusFractionUnder(t *testing.T) {
+	agg := metrics.Aggregation{Runs: 1, StatusCounts: map[int]int{201: 95, 503: 5}}
+	slo := func(f float64) scenario.SLOs {
+		return scenario.SLOs{StatusFractionUnder: &scenario.StatusFraction{Status: 503, Fraction: f}}
+	}
+	if v := Evaluate(agg, slo(0.10)); !v.Passed {
+		t.Errorf("5%% failed a < 10%% bound: %+v", v.Results)
+	}
+	if v := Evaluate(agg, slo(0.05)); v.Passed {
+		t.Error("5% passed a < 5% bound; the bound is strict")
+	}
+	if v := Evaluate(agg, slo(0.01)); v.Passed {
+		t.Error("5% passed a < 1% bound")
+	}
+	if v := Evaluate(metrics.Aggregation{Runs: 1}, slo(0.5)); v.Passed {
+		t.Error("status_fraction_under passed with zero responses")
+	}
+}

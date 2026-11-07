@@ -10,6 +10,13 @@ fault injection, to an authorized target and asserts the observed behaviour
 against SLOs declared in the scenario — a green/red verdict, gateable in CI.
 
 ### Added
+- **Request body and per-request variables (FR-11, FR-12, ADR-0010)** — a
+  scenario's `request.body` (a map is sent as JSON) and `{{uuid}}` / `{{seq}}`
+  in the path, header values and body, filled for every request, so a write
+  endpoint can be loaded with a distinct id or idempotency key each time. An
+  unknown `{{name}}` fails the load.
+- **`status_absent` and `status_fraction_under` SLOs (FR-13)** — "never a 500"
+  and "503 under X% of responses"; both fail when no response was recorded.
 - **Request headers (FR-10)** — a scenario's `request` may declare static
   headers, sent unchanged on every request; the only way to reach a target
   that requires auth today, since Sapper has no login flow of its own. Values
